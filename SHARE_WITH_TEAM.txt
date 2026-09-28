@@ -21,6 +21,7 @@ npm install && npm run build
 
 # Teste:
 node dist/cli/index.js analyze . --level 2 --output analysis.json
+node dist/cli/index.js report analysis.json --format html --ai-provider none
 node dist/cli/index.js report analysis.json --format html --ai-provider none --output report.html
 ```
 
