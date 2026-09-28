@@ -5,11 +5,12 @@ import { assertAnalysisResult } from '../../types/analysis-result.js';
 import { createAIProvider, type AIProviderName } from '../../adapters/ai_providers/provider_factory.js';
 import { renderHtmlReport } from '../report/render-html.js';
 import { renderMarkdownReport } from '../report/render-markdown.js';
+import { renderDocxReport } from '../../adapters/report/docx_renderer.js';
 import { enrichmentService } from '../../adapters/enrichment/enrichment_service.js';
 
 export interface ReportPipelineOptions {
   input: string;
-  format: 'html' | 'markdown' | 'json';
+  format: 'html' | 'markdown' | 'json' | 'docx';
   output?: string;
   aiProvider?: AIProviderName | 'none';
   aiToken?: string;
@@ -23,10 +24,12 @@ export interface ReportPipelineDeps {
   readFile?: typeof fs.readFileSync;
 }
 
+export type ReportOutput = string | Buffer;
+
 export async function runReportPipeline(
   opts: ReportPipelineOptions,
   deps?: ReportPipelineDeps,
-): Promise<string> {
+): Promise<ReportOutput> {
   const readFile = deps?.readFile || fs.readFileSync;
   const createProviderFn = deps?.createProvider || createAIProvider;
 
@@ -87,7 +90,7 @@ export async function runReportPipeline(
   }
 
   // Render report
-  let rendered: string;
+  let rendered: ReportOutput;
 
   if (opts.format === 'html') {
     rendered = renderHtmlReport(result, {
@@ -101,6 +104,8 @@ export async function runReportPipeline(
     });
   } else if (opts.format === 'json') {
     rendered = JSON.stringify(result, null, 2);
+  } else if (opts.format === 'docx') {
+    rendered = await renderDocxReport(result);
   } else {
     throw new Error(`Unsupported format: ${opts.format}`);
   }
@@ -121,7 +126,7 @@ export const reportCommand = {
       .option('format', {
         alias: 'f',
         type: 'string',
-        choices: ['html', 'markdown', 'json'],
+        choices: ['html', 'markdown', 'json', 'docx'],
         default: 'html',
         description: 'Output report format',
       })
@@ -181,10 +186,19 @@ export const reportCommand = {
       const rendered = await runReportPipeline(options);
 
       if (options.output) {
-        fs.writeFileSync(options.output, rendered);
+        if (options.format === 'docx') {
+          fs.writeFileSync(options.output, rendered as Buffer);
+        } else {
+          fs.writeFileSync(options.output, rendered as string);
+        }
         console.log(`✅ Report saved to: ${options.output}`);
       } else {
-        console.log(rendered);
+        if (options.format === 'docx') {
+          console.error('❌ DOCX format requires --output (cannot write binary to stdout)');
+          process.exit(1);
+        } else {
+          console.log(rendered);
+        }
       }
     } catch (error) {
       console.error('❌ Report generation failed:', (error as Error).message);
