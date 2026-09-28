@@ -552,9 +552,12 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](./LI
 
 ## 🙏 Agradecimentos
 
-- Construído com inspiração da comunidade OWASP e pesquisa de segurança
-- Powered by Babel, módulo AST, e NVD
-- Parte do ecossistema Samburá para cadeias de suprimento de software seguro
+- **Marchizinho** — Visão arquitetônica e design do projeto
+- **Heinrich VHO** (@heinrickVHO2) — Code review e feedback técnico
+- Comunidade OWASP e pesquisa de segurança
+- Babel, módulo AST, NVD e ecossistema Samburá
+
+Veja [CONTRIBUTORS.md](CONTRIBUTORS.md) para saber mais sobre quem faz Hawkeye possível! ❤️
 
 ---
 
