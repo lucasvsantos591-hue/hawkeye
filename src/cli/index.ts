@@ -5,10 +5,12 @@ import { hideBin } from 'yargs/helpers';
 import { analyzeCommand } from './commands/analyze';
 import { scanCommand } from './commands/scan';
 import { reportCommand } from './commands/report';
+import { analyzeWithAiCommand } from './commands/analyze-with-ai';
 
 export async function main() {
   const argv = yargs(hideBin(process.argv))
     .command(analyzeCommand)
+    .command(analyzeWithAiCommand)
     .command(scanCommand)
     .command(reportCommand)
     .option('verbose', {
