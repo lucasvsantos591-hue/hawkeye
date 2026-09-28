@@ -141,32 +141,53 @@ export function fetchPublicData(url) {
 
 ### Pré-requisitos
 
-- Dart 3.0+
 - Node.js 18+
-- Python 3.10+
-- Make
+- Dart 3.0+ (para o core em background — ainda em desenvolvimento)
+- Python 3.10+ (para parser Python — ainda em desenvolvimento)
 
 ### Instalação
 
 ```bash
 git clone https://github.com/seu-usuario/vra-project.git
 cd vra-project
-make setup
+npm install
+npm run build
 ```
 
-### Uso Básico
+### Uso Básico: Workflow em Dois Passos
 
+VRA separa análise determinística de enhancement com IA:
+
+**1️⃣ Análise (determinística, sem IA)**
 ```bash
-# Analisar um projeto JavaScript/TypeScript
-vra analyze ./meu-app-nodejs --level 2
+# Gera JSON estruturado com vulnerabilidades e alcançabilidade
+vra analyze ./meu-app --level 2 --output analysis.json
+```
 
-# Analisar um projeto Python
-vra analyze ./meu-app-python --language python --level 3
+**2️⃣ Relatório (com IA agnóstica opcional)**
+```bash
+# Sem IA: apenas estrutura as recomendações do analysis.json
+vra report analysis.json --format html --output relatorio.html --ai-provider none
 
-# Gerar relatório HTML
-vra analyze ./meu-app --format html --output relatorio.html
+# Com Claude (requer ANTHROPIC_API_KEY ou --ai-token)
+vra report analysis.json --format html --ai-provider claude --output relatorio-claude.html
 
-# Verificar um CVE específico
+# Com OpenAI (requer OPENAI_API_KEY ou --ai-token)
+vra report analysis.json --format html --ai-provider openai --output relatorio-gpt.html
+
+# Com Gemini (requer GEMINI_API_KEY ou GOOGLE_API_KEY ou --ai-token)
+vra report analysis.json --format html --ai-provider gemini
+
+# Com endpoint customizado OpenAI-compatible (Ollama, Groq, Mistral, etc.)
+vra report analysis.json --format html --ai-provider custom --ai-base-url http://localhost:8000/v1 --ai-token test-key
+
+# Formato Markdown ou JSON
+vra report analysis.json --format markdown
+vra report analysis.json --format json | jq '.results[] | select(.is_reachable == true)'
+```
+
+### Verificar um CVE Específico (Em desenvolvimento)
+```bash
 vra scan axios 1.4.0 --language javascript
 ```
 
@@ -298,20 +319,84 @@ vra scan axios 1.4.0 --language javascript
 
 ## 🏗️ Arquitetura
 
+### Divisão de Responsabilidades (Opção 3 - Híbrida)
+
 ```
-vulnerability-reachability-engine/
-├── core/                      # Núcleo Dart sem dependências externas
-├── adapters/                  # Parsers de linguagem & adaptadores de API
-│   ├── parsers/
-│   │   ├── js_typescript_parser/
-│   │   └── python_parser/
-│   └── vulnerability_sources/
-│       ├── nvd_api_adapter.ts
-│       └── local_db_adapter.dart
-├── cli/                       # Interface de linha de comando
-├── integration/               # Conector Samburá
-└── tests/                     # Suite de testes abrangente
+Fluxo VRA:
+
+1. ANÁLISE (Determinística)
+   └─ vra analyze [projeto]
+      ├─ Parse (Babel AST para JS, stdlib AST para Python)
+      ├─ Call Graph (reachability levels 1/2/3)
+      ├─ CVE Matching (NVD API ou cache local)
+      └─ Output: analysis.json (estruturado, reprodutível)
+
+2. RELATÓRIO (AI-Agnostico, Opcional)
+   └─ vra report analysis.json --ai-provider [claude|openai|gemini|custom|none]
+      ├─ Lê analysis.json
+      ├─ [Opcionalmente] Chama IA para remediação:
+      │  └─ Prompt: "Para cada CVE, sugira tipo (MAJOR/MINOR/OPTIONAL) e ações"
+      │  └─ Resposta: JSON com sugestões detalhadas
+      ├─ Mescla sugestões em analysis.json
+      └─ Output: relatório HTML/Markdown/JSON
+
+Estrutura de Código:
+
+src/
+├── types/
+│   └── analysis-result.ts         # Schema compartilhado
+├── adapters/
+│   └── ai_providers/              # Abstração agnóstica de IA
+│       ├── ai_provider.interface  # Contrato
+│       ├── prompts.ts             # Prompt shared + parsing
+│       ├── claude_provider.ts     # Implementação Anthropic
+│       ├── openai_provider.ts     # Implementação OpenAI (+ custom)
+│       ├── gemini_provider.ts     # Implementação Google
+│       └── provider_factory.ts    # Factory com resolução de env vars
+├── cli/
+│   ├── commands/
+│   │   ├── analyze.ts             # Análise (hoje mockado)
+│   │   └── report.ts              # Renderização de relatório
+│   └── report/
+│       ├── render-html.ts         # Renderer HTML
+│       └── render-markdown.ts     # Renderer Markdown
+├── core/                          # Dart core (WIP)
+└── adapters/vulnerability_sources # Parsers (WIP)
 ```
+
+### Fluxo de Dados
+
+```
+projeto-local/                                 (usuário)
+  ↓
+vra analyze ./projeto --level 2 --output a.json
+  ├─ Parse (JS/Python) → Call Graph
+  ├─ Fetch CVEs (NVD)
+  ├─ Check Reachability (alcançável?)
+  ↓
+a.json (determinístico, sempre igual)
+  │
+  ├─ Cenário 1: Sem IA
+  │  ├─ vra report a.json --ai-provider none
+  │  └─ Output: relatório com remediações do a.json
+  │
+  └─ Cenário 2: Com IA do usuário
+     ├─ vra report a.json --ai-provider claude --ai-token $KEY
+     ├─ Send a.json findings → LLM (Claude, GPT, Gemini, etc.)
+     ├─ LLM retorna: sugestões de remediação em JSON
+     ├─ Merge: sugestões sobrescrevem remediation em a.json
+     └─ Output: relatório enriquecido com IA
+```
+
+### Por que Agnóstico?
+
+Empresas usam diferentes LLMs por motivos legítimos:
+- **Custo:** OpenAI GPT pode ser caro; Gemini ou custom (Ollama) é barato
+- **Compliance:** Dados não podem sair da rede; usa self-hosted (Ollama)
+- **Já paga:** Empresa tem contrato com Claude; usa esse
+- **Qualidade:** Diferentes LLMs são melhores em diferentes tarefas
+
+VRA oferece **um** workflow — o usuário escolhe a IA. Sem lock-in.
 
 ---
 
@@ -328,18 +413,30 @@ vulnerability-reachability-engine/
 
 ```bash
 # Executar todos os testes
-make test
+npm test
 
-# Executar suite de testes específica
-make test-core
-make test-cli
-make test-e2e
+# Executar suite específica
+npm test -- provider_factory
+npm test -- report
 
-# Modo watch (monitora mudanças)
-make test-watch
+# Modo watch
+npm test -- --watch
 
-# Relatório de cobertura
-make test-core -- --coverage
+# Testes E2E (infraestrutura ainda em desenvolvimento)
+npm run test:e2e
+```
+
+### Teste Manual: Gerar Relatório de Exemplo
+
+```bash
+# Sem IA (rápido, offline)
+npm run build
+node dist/cli/index.js report tests/fixtures/analysis-results/sample-basic.json \
+  --format html --ai-provider none --output /tmp/report.html
+
+# Visualizar
+open /tmp/report.html  # macOS
+xdg-open /tmp/report.html  # Linux
 ```
 
 ---
@@ -365,7 +462,22 @@ pip install vra-python-parsers
 
 ## 🔧 Configuração
 
-Crie um arquivo `.vrarc` na raiz do seu projeto:
+### Variáveis de Ambiente (para AI)
+
+```bash
+# Claude (Anthropic)
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# OpenAI
+export OPENAI_API_KEY="sk-..."
+
+# Gemini (Google)
+export GEMINI_API_KEY="AIzaSy..."
+# ou
+export GOOGLE_API_KEY="AIzaSy..."
+```
+
+### Arquivo de Configuração `.vrarc` (Em desenvolvimento)
 
 ```json
 {
@@ -374,12 +486,24 @@ Crie um arquivo `.vrarc` na raiz do seu projeto:
   "cve_sources": ["nvd", "local"],
   "cache_dir": "./.vra-cache",
   "exclude_packages": ["@types/*"],
-  "entry_points": ["src/index.ts"],
-  "output": {
-    "format": "json",
-    "path": "./relatorio.json"
-  }
+  "entry_points": ["src/index.ts"]
 }
+```
+
+### Opções de Linha de Comando
+
+```bash
+# Análise
+vra analyze [path] --level 1|2|3 --language js|python|java|go|rust --output results.json
+
+# Relatório com IA
+vra report analysis.json \
+  --format html|markdown|json \
+  --ai-provider claude|openai|gemini|custom|none \
+  --ai-token [API_KEY] \
+  --ai-base-url [para custom endpoints] \
+  --ai-model [opcional, override model padrão] \
+  --output relatorio.html
 ```
 
 ---
