@@ -33,7 +33,8 @@
       "Bash(node dist/cli/index.js report tests/fixtures/analysis-results/sample-basic.json --format markdown --ai-provider none)",
       "Bash(node dist/cli/index.js report tests/fixtures/analysis-results/sample-basic.json --format json --ai-provider claude --ai-token test-key)",
       "Bash(node dist/cli/index.js report tests/fixtures/analysis-results/sample-basic.json --format html --ai-provider none)",
-      "Bash(timeout 30 npx vitest run tests/unit/provider_factory.test.ts tests/unit/report.test.ts 2>&1)"
+      "Bash(timeout 30 npx vitest run tests/unit/provider_factory.test.ts tests/unit/report.test.ts 2>&1)",
+      "Bash(npm audit *)"
     ]
   }
 }

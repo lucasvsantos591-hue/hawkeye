@@ -19,7 +19,6 @@ export class GeminiProvider implements AIProvider {
   async generateRemediations(findings: VulnerabilityFinding[]): Promise<RemediationSuggestion[]> {
     let GoogleGenerativeAI: any;
     try {
-      // @ts-expect-error - SDK is optional
       const mod = await import('@google/generative-ai');
       GoogleGenerativeAI = mod.GoogleGenerativeAI;
     } catch (error) {

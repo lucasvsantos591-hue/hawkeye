@@ -19,7 +19,6 @@ export class OpenAIProvider implements AIProvider {
   async generateRemediations(findings: VulnerabilityFinding[]): Promise<RemediationSuggestion[]> {
     let OpenAI: any;
     try {
-      // @ts-expect-error - SDK is optional
       const mod = await import('openai');
       OpenAI = mod.default;
     } catch (error) {

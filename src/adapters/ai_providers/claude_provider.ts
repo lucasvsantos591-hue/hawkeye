@@ -19,7 +19,6 @@ export class ClaudeProvider implements AIProvider {
   async generateRemediations(findings: VulnerabilityFinding[]): Promise<RemediationSuggestion[]> {
     let Anthropic: any;
     try {
-      // @ts-expect-error - SDK is optional
       const mod = await import('@anthropic-ai/sdk');
       Anthropic = mod.default;
     } catch (error) {
