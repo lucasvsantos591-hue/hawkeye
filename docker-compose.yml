@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # SQLite via SQLiteOnline API (mock for development)
+  mock-nvd-api:
+    image: httpbin/httpbin:latest
+    container_name: vra-mock-nvd
+    ports:
+      - "5000:80"
+    environment:
+      - ALLOW_ORIGIN=*
+    networks:
+      - vra-network
+
+  # Local test database (SQLite in volume)
+  # Mounted at /app/data/vulnerabilities.db
+
+  # Redis cache (optional, for future use)
+  redis:
+    image: redis:7-alpine
+    container_name: vra-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - vra-network
+    command: redis-server --appendonly yes
+
+networks:
+  vra-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

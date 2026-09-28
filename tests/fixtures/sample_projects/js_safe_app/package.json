@@ -1,0 +1,11 @@
+{
+  "name": "js-safe-app",
+  "version": "1.0.0",
+  "description": "Sample app that doesn't use vulnerable code",
+  "main": "src/index.js",
+  "dependencies": {
+    "express": "4.16.0",
+    "lodash": "4.17.10"
+  },
+  "devDependencies": {}
+}

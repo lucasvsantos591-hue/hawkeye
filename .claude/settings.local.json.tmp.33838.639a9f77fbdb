@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sudo apt-get update)",
+      "Bash(sudo apt-get install -y dart)",
+      "Read(//tmp/**)",
+      "Bash(curl https://dart.dev/get-dart/linux -o get-dart.sh)",
+      "Bash(bash get-dart.sh)",
+      "Bash(make check-health *)",
+      "Bash(npm install *)",
+      "Bash(pip install *)",
+      "Bash(npm run *)",
+      "Bash(docker --version)",
+      "Bash(docker-compose --version)",
+      "Bash(make dev-up *)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

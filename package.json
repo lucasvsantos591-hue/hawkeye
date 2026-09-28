@@ -1,0 +1,51 @@
+{
+  "name": "vra-project",
+  "version": "0.1.0",
+  "description": "Vulnerability Reachability Analyzer - Multi-language, intelligent CVE validation",
+  "type": "module",
+  "main": "dist/cli/index.js",
+  "bin": {
+    "vra": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:e2e": "vitest run tests/e2e",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write .",
+    "clean": "rm -rf dist/",
+    "start": "node dist/cli/index.js",
+    "start:dev": "tsx src/cli/index.ts"
+  },
+  "keywords": [
+    "security",
+    "vulnerability",
+    "reachability",
+    "cve",
+    "analysis",
+    "sca",
+    "sbom"
+  ],
+  "author": "VRA Team",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/parser": "^7.23.0",
+    "@babel/traverse": "^7.23.0",
+    "@babel/types": "^7.23.0",
+    "axios": "^1.6.0",
+    "yargs": "^17.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/yargs": "^17.0.35",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.50.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.2.0",
+    "vitest": "^0.34.0"
+  }
+}

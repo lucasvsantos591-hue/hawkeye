@@ -1,0 +1,11 @@
+{
+  "name": "js-vulnerable-app",
+  "version": "1.0.0",
+  "description": "Sample app with exploitable vulnerability",
+  "main": "src/index.js",
+  "dependencies": {
+    "express": "4.16.0",
+    "lodash": "4.17.10"
+  },
+  "devDependencies": {}
+}
