@@ -142,7 +142,89 @@ security_scan:
 
 ---
 
-### 4. 🏢 Enterprise Features
+### 4. 📊 CVE Enrichment & Context
+
+**Problema**: Usuário vem com uma CVE para validar, mas falta contexto (está sendo explorada? Qual score de probabilidade?)
+
+**Solução**: Integrar com APIs públicas de contexto:
+
+#### a) CISA KEV Integration
+```bash
+vra scan-repo \
+  --repo https://github.com/user/projeto \
+  --cves CVE-2023-12345 \
+  --with-enrichment
+```
+
+Output inclui:
+```json
+{
+  "cve_id": "CVE-2023-12345",
+  "cisa_kev": {
+    "is_known_exploited": true,
+    "date_added": "2023-06-15",
+    "due_date": "2023-07-15"
+  },
+  "reachability_analysis": {
+    "is_reachable": true,
+    "confidence": 92
+  }
+}
+```
+
+**API**: https://www.cisa.gov/known-exploited-vulnerabilities (free, public)
+
+#### b) FIRST.org EPSS API Integration
+```json
+{
+  "epss": {
+    "score": 8.2,
+    "percentile": 95,
+    "date": "2024-01-15"
+  }
+}
+```
+
+**API**: https://api.first.org/epss/
+
+#### c) NVD API Enhancement
+- Dados técnicos + CVSS scores
+- Já parcialmente integrado
+
+**Combined Output Example**:
+```json
+{
+  "cve_id": "CVE-2023-12345",
+  "vulnerability": {
+    "package": "express",
+    "severity": "HIGH",
+    "cvss_score": 8.1
+  },
+  "context": {
+    "epss_score": 8.2,
+    "epss_percentile": 95,
+    "is_exploited_in_wild": true,  // CISA KEV
+    "due_date": "2023-07-15"
+  },
+  "reachability_analysis": {
+    "is_reachable": true,
+    "confidence": 92,
+    "call_chain": [...]
+  },
+  "priority": "CRITICAL"  // Auto-calculated
+}
+```
+
+**Benefits**:
+- ✅ Contexto real de exploração
+- ✅ Score de probabilidade (EPSS)
+- ✅ Data de descoberta (CISA)
+- ✅ Melhor priorização
+- ✅ APIs públicas (sem custo)
+
+---
+
+### 5. 🏢 Enterprise Features
 
 #### a) SBOM (Software Bill of Materials) Export
 ```bash
