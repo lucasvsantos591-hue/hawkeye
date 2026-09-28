@@ -5,6 +5,7 @@ import { assertAnalysisResult } from '../../types/analysis-result.js';
 import { createAIProvider, type AIProviderName } from '../../adapters/ai_providers/provider_factory.js';
 import { renderHtmlReport } from '../report/render-html.js';
 import { renderMarkdownReport } from '../report/render-markdown.js';
+import { enrichmentService } from '../../adapters/enrichment/enrichment_service.js';
 
 export interface ReportPipelineOptions {
   input: string;
@@ -14,6 +15,7 @@ export interface ReportPipelineOptions {
   aiToken?: string;
   aiBaseUrl?: string;
   aiModel?: string;
+  enrichment?: boolean;
 }
 
 export interface ReportPipelineDeps {
@@ -35,6 +37,17 @@ export async function runReportPipeline(
     result = assertAnalysisResult(JSON.parse(rawInput));
   } catch (error) {
     throw new Error(`Invalid analysis result JSON: ${(error as Error).message}`);
+  }
+
+  // Optionally enrich with CVE context (CISA KEV + FIRST EPSS)
+  if (opts.enrichment) {
+    try {
+      const enrichedFindings = await enrichmentService.enrichVulnerabilities(result.results);
+      (result as any).enriched_results = enrichedFindings;
+    } catch (error) {
+      console.warn(`⚠️ Warning: CVE enrichment failed: ${(error as Error).message}`);
+      // Continue without enrichment
+    }
   }
 
   // Optionally enhance with AI
@@ -134,6 +147,11 @@ export const reportCommand = {
       .option('ai-model', {
         type: 'string',
         description: 'Model override for AI provider',
+      })
+      .option('enrichment', {
+        type: 'boolean',
+        default: false,
+        description: 'Enrich findings with CVE context (CISA KEV + FIRST EPSS)',
       });
   },
 
@@ -146,10 +164,15 @@ export const reportCommand = {
       aiToken: argv['ai-token'],
       aiBaseUrl: argv['ai-base-url'],
       aiModel: argv['ai-model'],
+      enrichment: argv.enrichment,
     };
 
     try {
       console.log(`📄 Generating ${options.format.toUpperCase()} report from ${options.input}...`);
+
+      if (options.enrichment) {
+        console.log(`🔍 Enriching findings with CVE context (CISA KEV + FIRST EPSS)...`);
+      }
 
       if (options.aiProvider && options.aiProvider !== 'none') {
         console.log(`🤖 Using AI provider: ${options.aiProvider}`);
