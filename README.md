@@ -1,105 +1,105 @@
 # Vulnerability Reachability Analyzer (VRA)
 
-> **Intelligent CVE Validation** | Go beyond version-based vulnerability scanning to determine if a vulnerability is actually exploitable in your codebase.
+> **Validação Inteligente de CVEs** | Vá além do scanning baseado em versões para determinar se uma vulnerabilidade é realmente explorável no seu código.
 
-## 🎯 The Problem
+## 🎯 O Problema
 
-Traditional SCA (Software Composition Analysis) tools flag any package version with a known CVE as vulnerable—even if your code never uses the vulnerable function.
+Ferramentas SCA tradicionais (Software Composition Analysis) marcam qualquer versão de pacote com uma CVE conhecida como vulnerável—**mesmo que seu código nunca use a função vulnerável**.
 
-**Example:**
+**Exemplo:**
 ```javascript
-// Your code
-import axios from 'axios'; // CVE-2023-XXXX in axios < 1.4.0
+// Seu código
+import axios from 'axios'; // CVE-2023-XXXX em axios < 1.4.0
 
 export function fetchData() {
-  // Only uses safe methods
+  // Usa apenas métodos seguros
   return axios.get('/api/data');
 }
 ```
 
-Traditional scanner: ⚠️ **VULNERABLE**
-VRA: ✅ **SAFE** (vulnerable function not called)
+Scanner tradicional: ⚠️ **VULNERÁVEL** (falso positivo)
+VRA: ✅ **SEGURO** (função vulnerável não é chamada)
 
 ---
 
-## ✨ Features
+## ✨ Características
 
-### 🔍 Three Levels of Reachability Analysis
+### 🔍 Três Níveis de Análise de Alcançabilidade
 
-1. **Level 1: Import Detection**
-   - Checks if vulnerable package is imported
-   - Fastest, lowest false negatives
+1. **Nível 1: Detecção de Importações**
+   - Verifica se o pacote vulnerável é importado
+   - Mais rápido, menos falsos negativos
 
-2. **Level 2: Call Graph Analysis**
-   - Builds complete call graph of your code
-   - Determines if vulnerable function is reachable
-   - Provides call chain from entry point to vulnerability
+2. **Nível 2: Análise de Grafo de Chamadas**
+   - Constrói grafo completo de chamadas do seu código
+   - Determina se a função vulnerável é alcançável
+   - Fornece cadeia de chamadas do ponto de entrada até a vulnerabilidade
 
-3. **Level 3: Data Flow & Taint Analysis**
-   - Tracks how user input flows through your code
-   - Identifies if tainted data reaches vulnerable sink
-   - Most accurate, catches complex attack vectors
+3. **Nível 3: Análise de Fluxo de Dados & Taint**
+   - Rastreia como dados do usuário fluem pelo seu código
+   - Identifica se dados comprometidos alcançam o ponto vulnerável
+   - Mais preciso, detecta vetores de ataque complexos
 
-### 🌍 Multi-Language Support
+### 🌍 Suporte Multi-Linguagem
 
 - **JavaScript/TypeScript** (via Babel AST)
-- **Python** (via AST module)
+- **Python** (via módulo AST)
 - **Java, Go, Rust** (roadmap)
 
-### 📦 Multiple Vulnerability Sources
+### 📦 Múltiplas Fontes de Vulnerabilidades
 
-- **NVD API** (National Vulnerability Database)
-- **Local SQLite Cache** (offline support)
-- **Snyk API** (optional, planned)
+- **NVD API** (Banco de Dados Nacional de Vulnerabilidades)
+- **Cache SQLite Local** (suporte offline)
+- **API Snyk** (opcional, planejado)
 
 ### 🚀 Performance
 
-- Aggressive caching reduces API calls by 95%
-- Parallel analysis of multiple dependencies
-- Call graph built once, reused for all CVEs
+- Cache agressivo reduz chamadas de API em 95%
+- Análise paralela de múltiplas dependências
+- Grafo de chamadas construído uma vez, reutilizado para todos os CVEs
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Início Rápido
 
-### Prerequisites
+### Pré-requisitos
 
 - Dart 3.0+
 - Node.js 18+
 - Python 3.10+
 - Make
 
-### Installation
+### Instalação
 
 ```bash
-git clone https://github.com/your-org/vra-project.git
+git clone https://github.com/seu-usuario/vra-project.git
 cd vra-project
 make setup
 ```
 
-### Basic Usage
+### Uso Básico
 
 ```bash
-# Analyze a JavaScript/TypeScript project
-vra analyze ./my-nodejs-app --level 2
+# Analisar um projeto JavaScript/TypeScript
+vra analyze ./meu-app-nodejs --level 2
 
-# Analyze a Python project
-vra analyze ./my-python-app --language python --level 3
+# Analisar um projeto Python
+vra analyze ./meu-app-python --language python --level 3
 
-# Generate HTML report
-vra analyze ./my-app --format html --output report.html
+# Gerar relatório HTML
+vra analyze ./meu-app --format html --output relatorio.html
 
-# Check specific CVE
+# Verificar um CVE específico
 vra scan axios 1.4.0 --language javascript
 ```
 
 ---
 
-## 📊 Sample Output
+## 📊 Saída de Exemplo
 
 ```json
 {
-  "project_name": "my-app",
+  "project_name": "meu-app",
   "total_vulnerabilities": 15,
   "reachable_vulnerabilities": 3,
   "overall_risk_score": 42,
@@ -120,7 +120,7 @@ vra scan axios 1.4.0 --language javascript
         "handleRequest",
         "vulnerableFunction"
       ],
-      "remediation_advice": "Upgrade express to >=4.17.1"
+      "remediation_advice": "Atualizar express para >=4.17.1"
     },
     {
       "vulnerability": {
@@ -132,7 +132,7 @@ vra scan axios 1.4.0 --language javascript
       "is_reachable": false,
       "reachability_level": 1,
       "confidence": 100,
-      "remediation_advice": "No action needed - vulnerable function not used"
+      "remediation_advice": "Nenhuma ação necessária - função vulnerável não é usada"
     }
   ]
 }
@@ -140,55 +140,55 @@ vra scan axios 1.4.0 --language javascript
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Arquitetura
 
 ```
 vulnerability-reachability-engine/
-├── core/                      # Zero-dependency Dart core
-├── adapters/                  # Language parsers & API adapters
+├── core/                      # Núcleo Dart sem dependências externas
+├── adapters/                  # Parsers de linguagem & adaptadores de API
 │   ├── parsers/
 │   │   ├── js_typescript_parser/
 │   │   └── python_parser/
 │   └── vulnerability_sources/
 │       ├── nvd_api_adapter.ts
 │       └── local_db_adapter.dart
-├── cli/                       # Command-line interface
-├── integration/               # Samburá connector
-└── tests/                     # Comprehensive test suite
+├── cli/                       # Interface de linha de comando
+├── integration/               # Conector Samburá
+└── tests/                     # Suite de testes abrangente
 ```
 
 ---
 
-## 📚 Documentation
+## 📚 Documentação
 
-- [Architecture Guide](./VULNERABILITY_ANALYZER_ARCHITECTURE.md)
-- [API Reference](./docs/API.md)
-- [Contributing Guidelines](./packages/sambura_core/CONTRIBUTING.md)
-- [Configuration](./docs/CONFIG.md)
+- [Guia de Arquitetura](./VULNERABILITY_ANALYZER_ARCHITECTURE.md)
+- [Referência de API](./docs/API.md)
+- [Diretrizes de Contribuição](./packages/sambura_core/CONTRIBUTING.md)
+- [Configuração](./docs/CONFIG.md)
 
 ---
 
-## 🧪 Testing
+## 🧪 Testes
 
 ```bash
-# Run all tests
+# Executar todos os testes
 make test
 
-# Run specific test suite
+# Executar suite de testes específica
 make test-core
 make test-cli
 make test-e2e
 
-# Watch mode
+# Modo watch (monitora mudanças)
 make test-watch
 
-# Coverage report
+# Relatório de cobertura
 make test-core -- --coverage
 ```
 
 ---
 
-## 📦 Packages
+## 📦 Pacotes
 
 ### NPM
 ```bash
@@ -207,9 +207,9 @@ pip install vra-python-parsers
 
 ---
 
-## 🔧 Configuration
+## 🔧 Configuração
 
-Create a `.vrarc` file in your project root:
+Crie um arquivo `.vrarc` na raiz do seu projeto:
 
 ```json
 {
@@ -221,61 +221,61 @@ Create a `.vrarc` file in your project root:
   "entry_points": ["src/index.ts"],
   "output": {
     "format": "json",
-    "path": "./report.json"
+    "path": "./relatorio.json"
   }
 }
 ```
 
 ---
 
-## 🔌 Integration with Samburá
+## 🔌 Integração com Samburá
 
-VRA can integrate with Samburá to enforce policies:
+VRA pode se integrar com Samburá para forçar políticas:
 
 ```dart
-// In your Samburá gateway config
+// Na configuração do gateway Samburá
 import 'package:vra_core/vra_core.dart';
 
 final analyzer = ReachabilityAnalyzer();
 final result = await analyzer.analyze(projectPath);
 
-// Block deployments with critical reachable vulnerabilities
+// Bloquear deployments com vulnerabilidades críticas alcançáveis
 if (result.getCriticalReachable().isNotEmpty) {
-  throw PolicyViolationException('Critical vulnerabilities detected');
+  throw PolicyViolationException('Vulnerabilidades críticas detectadas');
 }
 ```
 
 ---
 
-## 🤝 Contributing
+## 🤝 Contribuindo
 
-Contributions welcome! Please see [CONTRIBUTING.md](./packages/sambura_core/CONTRIBUTING.md)
+Contribuições bem-vindas! Por favor, consulte [CONTRIBUTING.md](./packages/sambura_core/CONTRIBUTING.md)
 
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -am 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see [LICENSE](./LICENSE) file.
+1. Faça um fork do repositório
+2. Crie uma branch de feature (`git checkout -b feature/minha-feature`)
+3. Commit suas mudanças (`git commit -am 'Add minha feature incrível'`)
+4. Push para a branch (`git push origin feature/minha-feature`)
+5. Abra um Pull Request
 
 ---
 
-## 🙏 Acknowledgments
+## 📄 Licença
 
-- Built with inspiration from OWASP and security research community
-- Powered by Babel, AST module, and NVD
-- Part of the Samburá ecosystem for secure software supply chains
+Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](./LICENSE).
 
 ---
 
-## 📧 Support
+## 🙏 Agradecimentos
 
-- 📖 [Documentation](./docs)
-- 🐛 [Issue Tracker](https://github.com/your-org/vra-project/issues)
-- 💬 [Discussions](https://github.com/your-org/vra-project/discussions)
+- Construído com inspiração da comunidade OWASP e pesquisa de segurança
+- Powered by Babel, módulo AST, e NVD
+- Parte do ecossistema Samburá para cadeias de suprimento de software seguro
+
+---
+
+## 📧 Suporte
+
+- 📖 [Documentação](./docs)
+- 🐛 [Rastreador de Issues](https://github.com/lucasvsantos591-hue/vra-project/issues)
+- 💬 [Discussões](https://github.com/lucasvsantos591-hue/vra-project/discussions)
 - 📧 Email: vra@example.com
