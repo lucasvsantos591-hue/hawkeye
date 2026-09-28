@@ -142,85 +142,93 @@ security_scan:
 
 ---
 
-### 4. 📊 CVE Enrichment & Context
+### 4. 📊 CVE Enrichment & Context — ✅ COMPLETO (V2.1)
+
+**Status**: Implementado e testado!
 
 **Problema**: Usuário vem com uma CVE para validar, mas falta contexto (está sendo explorada? Qual score de probabilidade?)
 
 **Solução**: Integrar com APIs públicas de contexto:
 
-#### a) CISA KEV Integration
+#### a) CISA KEV Integration ✅
 ```bash
-vra scan-repo \
-  --repo https://github.com/user/projeto \
-  --cves CVE-2023-12345 \
-  --with-enrichment
+vra report analysis.json --enrichment --format html
 ```
 
-Output inclui:
-```json
-{
-  "cve_id": "CVE-2023-12345",
-  "cisa_kev": {
-    "is_known_exploited": true,
-    "date_added": "2023-06-15",
-    "due_date": "2023-07-15"
-  },
-  "reachability_analysis": {
-    "is_reachable": true,
-    "confidence": 92
-  }
-}
-```
+Agora suporta:
+- Lookup de vulnerabilidades conhecidas como exploradas
+- Cache de 1 hora para performance
+- Detecção de campanhas ransomware
 
 **API**: https://www.cisa.gov/known-exploited-vulnerabilities (free, public)
 
-#### b) FIRST.org EPSS API Integration
-```json
-{
-  "epss": {
-    "score": 8.2,
-    "percentile": 95,
-    "date": "2024-01-15"
-  }
-}
-```
+#### b) FIRST.org EPSS API Integration ✅
+Integrado! Fornece:
+- Score de probabilidade de exploração (0-100)
+- Percentil (onde você está comparado com outras CVEs)
+- Cachado com TTL de 1 hora
 
 **API**: https://api.first.org/epss/
 
-#### c) NVD API Enhancement
-- Dados técnicos + CVSS scores
-- Já parcialmente integrado
+#### c) Auto-Priority Calculation ✅
+Prioridade auto-calculada combinando:
+```
+priority_score = (EPSS_score × 0.4) + (CISA_KEV × 0.3) + (Reachability × 0.3)
+```
 
-**Combined Output Example**:
+Mapeia para níveis:
+- **CRITICAL** (80+): Alta probabilidade + reachability + exploração ativa
+- **HIGH** (60-80): Combinação de dois fatores críticos
+- **MEDIUM** (40-60): Risco moderado
+- **LOW** (<40): Risco baixo
+
+**Output Example**:
 ```json
 {
   "cve_id": "CVE-2023-12345",
   "vulnerability": {
     "package": "express",
     "severity": "HIGH",
-    "cvss_score": 8.1
+    "current_version": "4.16.0"
   },
-  "context": {
-    "epss_score": 8.2,
-    "epss_percentile": 95,
-    "is_exploited_in_wild": true,  // CISA KEV
-    "due_date": "2023-07-15"
+  "enrichment": {
+    "epss": {
+      "score": 8.2,
+      "percentile": 95,
+      "date": "2024-01-15"
+    },
+    "cisa_kev": {
+      "is_known_exploited": true,
+      "date_added": "2023-06-15",
+      "due_date": "2023-07-15",
+      "is_ransomware": false
+    }
   },
   "reachability_analysis": {
     "is_reachable": true,
     "confidence": 92,
-    "call_chain": [...]
+    "reachability_level": 2
   },
-  "priority": "CRITICAL"  // Auto-calculated
+  "priority": "CRITICAL",
+  "priority_score": 82,
+  "priority_reasoning": "High EPSS score (8.2) + Being exploited in the wild (CISA KEV) + Reachable in your code (92% confidence)"
 }
 ```
+
+**Implementation Details**:
+- `src/adapters/enrichment/cisa_kev_adapter.ts` - Adapter para CISA KEV
+- `src/adapters/enrichment/epss_adapter.ts` - Adapter para FIRST EPSS
+- `src/adapters/enrichment/enrichment_service.ts` - Serviço master com cálculo de prioridade
+- `src/types/cve-enrichment.ts` - Types para estruturas enriquecidas
+- Teste coverage: 8 testes automatizados passando
 
 **Benefits**:
 - ✅ Contexto real de exploração
 - ✅ Score de probabilidade (EPSS)
 - ✅ Data de descoberta (CISA)
-- ✅ Melhor priorização
+- ✅ Melhor priorização automática
 - ✅ APIs públicas (sem custo)
+- ✅ Performance otimizada com cache 1h
 
 ---
 
@@ -289,25 +297,26 @@ vra diff report-old.html report-new.html
 ## Priorização V2
 
 ### 🔴 Crítico (faz maior diferença)
-1. `scan-repo` com GitHub/GitLab clone
-2. `--post-github-issue` (o resultado fica visível no workflow)
+1. ✅ **CVE Enrichment (CISA KEV + EPSS)** — COMPLETO v2.1
+2. `scan-repo` com GitHub/GitLab clone
+3. `--post-github-issue` (o resultado fica visível no workflow)
 
 ### 🟡 Importante
-3. CI/CD templates + docs
-4. SBOM export (enterprise/compliance)
+4. CI/CD templates + docs
+5. SBOM export (enterprise/compliance)
 
 ### 🟢 Nice-to-have
-5. Interactive CLI
-6. Dashboard multi-repo
-7. Diff reports
+6. Interactive CLI
+7. Dashboard multi-repo
+8. Diff reports
 
 ---
 
 ## Timeline Estimado
 
 - **V2.0** (Mês 1-2): scan-repo + GitHub integration + CI/CD docs
-- **V2.1** (Mês 3): SBOM, compliance reports
-- **V2.2** (Mês 4+): Enterprise features (proxy, audit log, dashboard)
+- **V2.1** (Mês 2, EN ROUTE): ✅ CVE Enrichment (CISA KEV + EPSS), + SBOM, compliance reports
+- **V2.2** (Mês 3+): Enterprise features (proxy, audit log, dashboard)
 
 ---
 
