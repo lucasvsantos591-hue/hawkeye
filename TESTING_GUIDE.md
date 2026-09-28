@@ -16,8 +16,8 @@
 node --version
 
 # Clone e build
-git clone https://github.com/lucasvsantos591-hue/vra-project.git
-cd vra-project
+git clone https://github.com/lucasvsantos591-hue/hawkeye.git
+cd hawkeye
 npm install
 npm run build
 

@@ -28,8 +28,8 @@ Ferramentas tradicionais (Snyk, Sonatype, etc):
 ### Instalação (2 minutos)
 
 ```bash
-git clone https://github.com/lucasvsantos591-hue/vra-project.git
-cd vra-project
+git clone https://github.com/lucasvsantos591-hue/hawkeye.git
+cd hawkeye
 npm install
 npm run build
 ```

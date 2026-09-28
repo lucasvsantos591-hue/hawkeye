@@ -244,7 +244,7 @@ Após testes em cenário real, esperamos feedback em:
 ---
 
 ## Links
-- **Repo**: https://github.com/lucasvsantos591-hue/vra-project
+- **Repo**: https://github.com/lucasvsantos591-hue/hawkeye
 - [V1 README](README.md) - Documentação atual
 - [Testing Guide](TESTING_GUIDE.md) - Como testar V1 antes de V2
-- **Issues**: https://github.com/lucasvsantos591-hue/vra-project/issues
+- **Issues**: https://github.com/lucasvsantos591-hue/hawkeye/issues

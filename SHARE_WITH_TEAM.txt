@@ -15,7 +15,7 @@ Resultado: 80% menos alertas falsos, mais foco.
 🚀 QUICK START (3 min):
 
 ```bash
-git clone https://github.com/lucasvsantos591-hue/vra-project.git
+git clone https://github.com/lucasvsantos591-hue/hawkeye.git
 cd vra-project
 npm install && npm run build
 
@@ -59,7 +59,7 @@ R: Beta agora. Com seu feedback, production-ready em semanas.
 Feedback de qualidade = mention no README + hall of fame V2.
 
 🔗 REPO:
-https://github.com/lucasvsantos591-hue/vra-project
+https://github.com/lucasvsantos591-hue/hawkeye
 
 Dúvidas? Issues no repo ou direto comigo.
 
@@ -73,7 +73,7 @@ Hey team! 👋
 
 Fizemos uma ferramenta que reduz falsos positivos em scanning de vulnerabilidades em 80%.
 
-Repo: https://github.com/lucasvsantos591-hue/vra-project
+Repo: https://github.com/lucasvsantos591-hue/hawkeye
 
 Quick start: README.md ou FOR_YOUR_TEAM.md
 
@@ -97,10 +97,10 @@ Olá,
 
 Desenvolvemos uma ferramenta chamada VRA que melhora significativamente a análise de segurança ao focar em vulnerabilidades realmente exploráveis (eliminando ~80% de falsos positivos).
 
-**Repositório**: https://github.com/lucasvsantos591-hue/vra-project
+**Repositório**: https://github.com/lucasvsantos591-hue/hawkeye
 
 **Como começar**:
-1. Clone: git clone https://github.com/lucasvsantos591-hue/vra-project
+1. Clone: git clone https://github.com/lucasvsantos591-hue/hawkeye
 2. Instale: npm install && npm run build
 3. Teste: siga TESTING_GUIDE.md (30 minutos)
 4. Feedback: responda o formulário no final
