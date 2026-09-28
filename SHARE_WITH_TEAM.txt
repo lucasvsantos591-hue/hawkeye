@@ -4,9 +4,11 @@
 
 Oi pessoal! 👋
 
-Desenvolvemos uma ferramenta nova: **VRA** (Vulnerability Reachability Analyzer).
+Desenvolvemos uma ferramenta nova: **🎯 Hawkeye**
 
 Simples: ela diz se uma vulnerabilidade no seu código é **realmente explorável** ou só um falso positivo.
+
+Lema: **Um tiro, um alvo. Sem desperdício.**
 
 Resultado: 80% menos alertas falsos, mais foco.
 

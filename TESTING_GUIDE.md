@@ -1,6 +1,8 @@
-# 🧪 VRA V1 Testing Guide for Corporate Teams
+# 🎯 🧪 Hawkeye V1 Testing Guide for Corporate Teams
 
-**Objetivo**: Testar VRA V1 em cenários reais e coletar feedback para V2.
+**Objetivo**: Testar Hawkeye V1 em cenários reais e coletar feedback para V2.
+
+**Lema**: Um tiro, um alvo. Ajude-nos a acertar na mosca! 🎯
 
 **Duração estimada**: 30-60 minutos por tester.
 
@@ -14,8 +16,8 @@
 node --version
 
 # Clone e build
-git clone https://github.com/lucasvsantos591-hue/vra-project.git
-cd vra-project
+git clone https://github.com/lucasvsantos591-hue/hawkeye.git
+cd hawkeye
 npm install
 npm run build
 

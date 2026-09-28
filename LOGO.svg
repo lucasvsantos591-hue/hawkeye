@@ -1,0 +1,41 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle (subtle) -->
+  <circle cx="100" cy="100" r="95" fill="none" stroke="#667eea" stroke-width="1" opacity="0.1"/>
+
+  <!-- Outer bullseye ring (largest) -->
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#667eea" stroke-width="3"/>
+
+  <!-- Middle bullseye ring -->
+  <circle cx="100" cy="100" r="60" fill="none" stroke="#764ba2" stroke-width="3"/>
+
+  <!-- Inner bullseye ring -->
+  <circle cx="100" cy="100" r="40" fill="none" stroke="#667eea" stroke-width="3"/>
+
+  <!-- Center target circle (filled) -->
+  <circle cx="100" cy="100" r="20" fill="#764ba2"/>
+
+  <!-- Arrow/Hawkeye emblem - flying from top-right -->
+  <g transform="translate(100, 100) rotate(-45)">
+    <!-- Arrow shaft -->
+    <rect x="-5" y="-70" width="10" height="100" fill="#ff6b6b" rx="2"/>
+
+    <!-- Arrow head (triangle) -->
+    <path d="M -12 30 L 0 50 L 12 30 Z" fill="#ff6b6b"/>
+
+    <!-- Arrow feathers -->
+    <path d="M -10 -50 Q -25 -45 -20 -60" fill="#ff6b6b" opacity="0.8"/>
+    <path d="M 10 -50 Q 25 -45 20 -60" fill="#ff6b6b" opacity="0.8"/>
+  </g>
+
+  <!-- Dot at center -->
+  <circle cx="100" cy="100" r="4" fill="#ffffff"/>
+
+  <!-- Optional: Add shine/glow effect -->
+  <defs>
+    <radialGradient id="glow" cx="100" cy="100">
+      <stop offset="0%" style="stop-color:#fff;stop-opacity:0.2" />
+      <stop offset="100%" style="stop-color:#fff;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+  <circle cx="100" cy="100" r="85" fill="url(#glow)"/>
+</svg>

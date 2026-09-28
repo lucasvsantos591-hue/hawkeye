@@ -1,6 +1,9 @@
-# Vulnerability Reachability Analyzer (VRA)
+# 🎯 Hawkeye
 
-> **Validação Inteligente de CVEs** | Vá além do scanning baseado em versões para determinar se uma vulnerabilidade é realmente explorável no seu código.
+> **Precision Vulnerability Reachability Analysis**  
+> One Shot. One Target. No False Positives.
+>
+> Go beyond version-based scanning to determine if a vulnerability is truly exploitable in your code.
 
 ## 🎯 O Problema
 
@@ -119,9 +122,11 @@ export function fetchPublicData(url) {
 
 ### 🌍 Suporte Multi-Linguagem
 
-- **JavaScript/TypeScript** (via Babel AST)
-- **Python** (via módulo AST)
-- **Java, Go, Rust** (roadmap)
+Hawkeye suporta análise de reachability para múltiplas linguagens:
+
+- **JavaScript/TypeScript** ✅ (via Babel AST)
+- **Python** 🚧 (em desenvolvimento, via módulo AST)
+- **Java, Go, Rust** 🗺️ (roadmap V2+)
 
 ### 📦 Múltiplas Fontes de Vulnerabilidades
 
@@ -508,13 +513,13 @@ vra report analysis.json \
 
 ---
 
-## 🔌 Integração com Samburá
+## 🔌 Integração com Samburá (Planejado V2)
 
-VRA pode se integrar com Samburá para forçar políticas:
+Hawkeye planejado para integrar com Samburá para forçar políticas de segurança:
 
 ```dart
-// Na configuração do gateway Samburá
-import 'package:vra_core/vra_core.dart';
+// Na configuração do gateway Samburá (V2)
+import 'package:hawkeye_core/hawkeye_core.dart';
 
 final analyzer = ReachabilityAnalyzer();
 final result = await analyzer.analyze(projectPath);

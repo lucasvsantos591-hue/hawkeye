@@ -1,12 +1,14 @@
-# VRA V1: Convite para Testar em Produção 🚀
+# 🎯 Hawkeye: Convite para Testar em Produção 🚀
 
 Olá time! 👋
 
-Desenvolvemos **VRA (Vulnerability Reachability Analyzer)** — uma ferramenta que diz se uma vulnerabilidade é **realmente explorável** no seu código, não apenas "versão X tem CVE".
+Desenvolvemos **Hawkeye** — uma ferramenta que diz se uma vulnerabilidade é **realmente explorável** no seu código, não apenas "versão X tem CVE".
+
+**Lema**: Um tiro, um alvo. Sem desperdício de alertas falsos.
 
 ## ⚡ Quick Start
 
-### O que é VRA?
+### O que é Hawkeye?
 
 Ferramentas tradicionais (Snyk, Sonatype, etc):
 ```
@@ -15,7 +17,7 @@ Ferramentas tradicionais (Snyk, Sonatype, etc):
 ❌ Outcome: 80% falsos positivos que você ignora
 ```
 
-**VRA**:
+**Hawkeye** (um tiro, um alvo):
 ```
 ✅ "Você importa lodash, mas apenas usa _.map()"
 ✅ "A vulnerabilidade está em _.template()"
@@ -99,7 +101,7 @@ Após testar, responda:
 ## 🔐 Segurança & Privacy
 
 **Importante para empresas**:
-- ✅ VRA é **open-source** — code review possível
+- ✅ Hawkeye é **open-source** — code review possível
 - ✅ Análise local — repositório fica no seu computador
 - ✅ IA é **agnóstica** — vocês escolhem qual usar
   - Claude (Anthropic)

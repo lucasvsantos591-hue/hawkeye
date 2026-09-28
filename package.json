@@ -1,7 +1,7 @@
 {
-  "name": "vra-project",
+  "name": "hawkeye-cli",
   "version": "0.1.0",
-  "description": "Vulnerability Reachability Analyzer - Multi-language, intelligent CVE validation",
+  "description": "Hawkeye: Precision Vulnerability Reachability Analysis - One Shot, One Target. No False Positives.",
   "type": "module",
   "main": "dist/cli/index.js",
   "bin": {

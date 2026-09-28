@@ -1,8 +1,10 @@
-# VRA V2 Roadmap 🚀
+# 🎯 Hawkeye V2 Roadmap 🚀
 
 ## Visão Geral
 
-V1 entregar **análise agnóstica e determinística** com **IA opcional**. V2 traz **integração com repositórios** e **seleção granular de CVEs**.
+V1 entrega **análise agnóstica e determinística** com **IA opcional**. V2 traz **integração com repositórios** e **seleção granular de CVEs**.
+
+**Lema**: Um tiro, um alvo. Sem desperdício.
 
 ## Features V2
 
