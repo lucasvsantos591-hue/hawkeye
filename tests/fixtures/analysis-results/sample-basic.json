@@ -1,0 +1,95 @@
+{
+  "project_name": "sample-app",
+  "total_vulnerabilities": 3,
+  "reachable_vulnerabilities": 2,
+  "overall_risk_score": 65,
+  "summary": {
+    "critical_reachable": 0,
+    "high_reachable": 2,
+    "medium_reachable": 0,
+    "false_positives_filtered": 1
+  },
+  "results": [
+    {
+      "vulnerability": {
+        "cve_id": "CVE-2023-12345",
+        "package": "express",
+        "current_version": "4.16.0",
+        "affected_versions": ["<4.17.1"],
+        "severity": "HIGH",
+        "epss_score": 8.2,
+        "is_exploited_in_wild": true
+      },
+      "is_reachable": true,
+      "reachability_level": 2,
+      "confidence": 92,
+      "call_chain": {
+        "entry_point": "src/index.js:main",
+        "path": ["setupRoutes", "handleRequest", "express.use(bodyParser)"]
+      },
+      "remediation": {
+        "type": "MINOR",
+        "description": "Update express to fix request handling vulnerability",
+        "required_version": ">=4.17.1",
+        "breaking_changes": false,
+        "changes_needed": ["Update express in package.json"],
+        "action": "npm install express@4.17.1",
+        "effort_estimate": "5 minutes"
+      }
+    },
+    {
+      "vulnerability": {
+        "cve_id": "CVE-2023-54321",
+        "package": "lodash",
+        "current_version": "4.15.0",
+        "affected_versions": ["<5.0.0"],
+        "severity": "HIGH",
+        "epss_score": 7.8,
+        "is_exploited_in_wild": false
+      },
+      "is_reachable": true,
+      "reachability_level": 3,
+      "confidence": 87,
+      "call_chain": {
+        "entry_point": "src/handlers/data.js:processUserData",
+        "taint_analysis": "User input flows through _.map() which has prototype pollution vulnerability",
+        "path": ["handleUserData", "_.map(userData)", "vulnerable function"]
+      },
+      "remediation": {
+        "type": "MAJOR",
+        "description": "Major version upgrade with breaking API changes required",
+        "required_version": ">=5.0.0",
+        "breaking_changes": true,
+        "changes_needed": [
+          "Replace _.assign() with Object.assign()",
+          "Update src/handlers/data.js to use new lodash@5 API",
+          "Test prototype pollution vectors"
+        ],
+        "action": "npm install lodash@5.0.0 && npm test",
+        "effort_estimate": "2-4 hours",
+        "notes": "This is a breaking change. Lodash 5.x removed legacy method variants."
+      }
+    },
+    {
+      "vulnerability": {
+        "cve_id": "CVE-2023-99999",
+        "package": "uuid",
+        "current_version": "8.0.0",
+        "affected_versions": ["<8.3.2"],
+        "severity": "MEDIUM",
+        "epss_score": 5.1,
+        "is_exploited_in_wild": false
+      },
+      "is_reachable": false,
+      "reachability_level": 1,
+      "confidence": 100,
+      "reason": "Package uuid is imported but vulnerable function (random seeding) is not used. Only uuid.v4() with default crypto.randomUUID() is called.",
+      "remediation": {
+        "type": "OPTIONAL",
+        "description": "Optional update - vulnerability not exploitable in current code",
+        "notes": "Monitor for future updates but no action needed at this time.",
+        "action": "Monitor repository"
+      }
+    }
+  ]
+}

@@ -37,6 +37,11 @@
     "axios": "^1.6.0",
     "yargs": "^17.7.0"
   },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@google/generative-ai": "^0.3.0",
+    "openai": "^4.52.0"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/yargs": "^17.0.35",
