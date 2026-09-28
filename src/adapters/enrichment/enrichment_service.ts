@@ -1,9 +1,14 @@
 import type { VulnerabilityFinding } from '../../types/analysis-result.js';
 import type { CVEEnrichment, EnrichedVulnerabilityFinding } from '../../types/cve-enrichment.js';
+<<<<<<< HEAD
 import type { ExposureContext } from '../../types/context.js';
 import { cisaKEVAdapter } from './cisa_kev_adapter.js';
 import { epssAdapter } from './epss_adapter.js';
 import { ExposureRescoring } from './exposure_rescoring.js';
+=======
+import { cisaKEVAdapter } from './cisa_kev_adapter.js';
+import { epssAdapter } from './epss_adapter.js';
+>>>>>>> 8aa6d91 (feat: add CVE enrichment adapters (CISA KEV + FIRST EPSS))
 
 /**
  * CVE Enrichment Service
@@ -13,12 +18,15 @@ import { ExposureRescoring } from './exposure_rescoring.js';
  */
 
 class EnrichmentService {
+<<<<<<< HEAD
   private exposureRescoring: ExposureRescoring;
 
   constructor() {
     this.exposureRescoring = new ExposureRescoring();
   }
 
+=======
+>>>>>>> 8aa6d91 (feat: add CVE enrichment adapters (CISA KEV + FIRST EPSS))
   /**
    * Calculate priority score (0-100) based on enrichment and reachability
    */
@@ -93,7 +101,10 @@ class EnrichmentService {
    */
   async enrichVulnerability(
     finding: VulnerabilityFinding,
+<<<<<<< HEAD
     exposure?: ExposureContext,
+=======
+>>>>>>> 8aa6d91 (feat: add CVE enrichment adapters (CISA KEV + FIRST EPSS))
   ): Promise<EnrichedVulnerabilityFinding> {
     const cveId = finding.vulnerability.cve_id;
 
@@ -109,6 +120,7 @@ class EnrichmentService {
       epss: epssData as any,
     };
 
+<<<<<<< HEAD
     // Apply exposure-based rescoring if available
     let adjustedSeverity = finding.vulnerability.severity;
     let exposureRescoring = null;
@@ -122,6 +134,8 @@ class EnrichmentService {
       exposureRescoring = rescored;
     }
 
+=======
+>>>>>>> 8aa6d91 (feat: add CVE enrichment adapters (CISA KEV + FIRST EPSS))
     // Calculate priority
     const priorityScore = this.calculatePriorityScore(
       enrichment,
@@ -130,23 +144,34 @@ class EnrichmentService {
     );
 
     const priority = this.getPriorityLevel(priorityScore);
+<<<<<<< HEAD
     let priorityReasoning = this.getPriorityReasoning(
+=======
+    const priorityReasoning = this.getPriorityReasoning(
+>>>>>>> 8aa6d91 (feat: add CVE enrichment adapters (CISA KEV + FIRST EPSS))
       enrichment,
       finding.is_reachable,
       finding.confidence,
     );
 
+<<<<<<< HEAD
     // Add exposure-based reasoning if applicable
     if (exposureRescoring?.mitigation_reason) {
       priorityReasoning += ` + ${exposureRescoring.mitigation_reason}`;
     }
 
+=======
+>>>>>>> 8aa6d91 (feat: add CVE enrichment adapters (CISA KEV + FIRST EPSS))
     return {
       cve_id: cveId,
       package: finding.vulnerability.package,
       current_version: finding.vulnerability.current_version,
       affected_versions: finding.vulnerability.affected_versions,
+<<<<<<< HEAD
       severity: adjustedSeverity as any,
+=======
+      severity: finding.vulnerability.severity,
+>>>>>>> 8aa6d91 (feat: add CVE enrichment adapters (CISA KEV + FIRST EPSS))
       enrichment,
       is_reachable: finding.is_reachable,
       reachability_level: finding.reachability_level,
@@ -160,11 +185,16 @@ class EnrichmentService {
   /**
    * Enrich multiple vulnerabilities
    */
+<<<<<<< HEAD
   async enrichVulnerabilities(
     findings: VulnerabilityFinding[],
     exposure?: ExposureContext,
   ): Promise<EnrichedVulnerabilityFinding[]> {
     return Promise.all(findings.map((f) => this.enrichVulnerability(f, exposure)));
+=======
+  async enrichVulnerabilities(findings: VulnerabilityFinding[]): Promise<EnrichedVulnerabilityFinding[]> {
+    return Promise.all(findings.map((f) => this.enrichVulnerability(f)));
+>>>>>>> 8aa6d91 (feat: add CVE enrichment adapters (CISA KEV + FIRST EPSS))
   }
 
   /**
