@@ -6,8 +6,12 @@ export interface RenderMeta {
 }
 
 export function renderHtmlReport(result: AnalysisResult, meta: RenderMeta): string {
-  const reachable = result.results.filter((v) => v.is_reachable);
-  const notReachable = result.results.filter((v) => !v.is_reachable);
+  // Use enriched results if available, otherwise fall back to basic results
+  const enrichedResults = (result as any).enriched_results;
+  const displayResults = enrichedResults || result.results;
+
+  const reachable = displayResults.filter((v: any) => v.is_reachable);
+  const notReachable = displayResults.filter((v: any) => !v.is_reachable);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -350,7 +354,7 @@ export function renderHtmlReport(result: AnalysisResult, meta: RenderMeta): stri
         ${
           reachable.length === 0
             ? '<p style="color: #28a745; font-size: 1.1em;">✅ No reachable vulnerabilities found!</p>'
-            : reachable.map((v) => renderVulnerability(v)).join('')
+            : reachable.map((v: any) => renderVulnerability(v)).join('')
         }
       </div>
 
@@ -359,7 +363,7 @@ export function renderHtmlReport(result: AnalysisResult, meta: RenderMeta): stri
         ${
           notReachable.length === 0
             ? '<p style="color: #666;">No non-reachable vulnerabilities.</p>'
-            : notReachable.map((v) => renderVulnerability(v)).join('')
+            : notReachable.map((v: any) => renderVulnerability(v)).join('')
         }
       </div>
 
@@ -510,44 +514,126 @@ function renderExposureSection(exposure: any): string {
 }
 
 function renderVulnerability(vuln: any): string {
-  const severityClass = vuln.vulnerability.severity.toLowerCase();
-  const typeClass = vuln.remediation.type.toLowerCase();
+  // Check if this is enriched data or basic data
+  const isEnriched = vuln.priority !== undefined;
+  const cveId = vuln.cve_id || vuln.vulnerability.cve_id;
+  const pkgName = vuln.package || vuln.vulnerability.package;
+  const version = vuln.current_version || vuln.vulnerability.current_version;
+  const severity = vuln.severity || vuln.vulnerability.severity;
+  const severityClass = severity.toLowerCase();
+
+  let enrichmentHtml = '';
+  if (isEnriched && vuln.enrichment) {
+    const enrichment = vuln.enrichment;
+    enrichmentHtml = `
+      <div style="background: #f0f4ff; padding: 15px; border-radius: 4px; margin: 15px 0; border-left: 4px solid #0066cc;">
+        <h4 style="color: #0066cc; margin-bottom: 10px;">🔍 CVE Enrichment & Priority Analysis</h4>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+          <div>
+            <p><strong>Priority Score:</strong> <span style="font-size: 1.5em; color: ${getPriorityColor(vuln.priority_score)}; font-weight: bold;">${vuln.priority_score}/100</span></p>
+            <p><strong>Priority Level:</strong> <span style="padding: 4px 8px; border-radius: 4px; background: ${getPriorityBackground(vuln.priority)}; color: white; font-weight: bold;">${vuln.priority}</span></p>
+          </div>
+          <div>
+            ${enrichment.epss ? `<p><strong>EPSS Score:</strong> ${enrichment.epss.score}/100 (${enrichment.epss.percentile}th percentile)</p>` : ''}
+            ${enrichment.cisa_kev?.is_known_exploited ? `<p><strong>Known Exploitation:</strong> ✅ YES - Being exploited in the wild (CISA KEV)</p>` : `<p><strong>Known Exploitation:</strong> ❌ Not known to be exploited</p>`}
+            ${enrichment.cisa_kev?.is_ransomware ? `<p><strong>Ransomware Campaigns:</strong> ⚠️ Used in ransomware attacks</p>` : ''}
+          </div>
+        </div>
+
+        <p><strong>📊 Priority Reasoning:</strong> ${escapeHtml(vuln.priority_reasoning)}</p>
+      </div>
+    `;
+  }
+
+  const remediation = vuln.remediation || {};
+  const typeClass = (remediation.type || '').toLowerCase();
+  const affectedVers = (vuln.affected_versions || []).join(', ');
+
+  let callChainHtml = '';
+  if (vuln.call_chain) {
+    const steps = vuln.call_chain.path.map((step: string, idx: number) =>
+      `<li style="margin: 8px 0;"><strong>${idx + 1}. </strong>${escapeHtml(step)}</li>`
+    ).join('');
+    callChainHtml = `
+      <div style="background: #fffacd; padding: 12px; border-radius: 4px; margin: 15px 0; border-left: 4px solid #ff9500;">
+        <h4 style="color: #ff9500; margin-bottom: 10px;">📍 Cadeia de Exploração</h4>
+        <p style="margin-bottom: 10px;"><strong>Entrada:</strong> ${escapeHtml(vuln.call_chain.entry_point)}</p>
+        <ol style="margin-left: 20px;">${steps}</ol>
+        <p style="margin-top: 10px; font-size: 0.9em; color: #666;"><strong>Taint Flow:</strong> ${escapeHtml(vuln.call_chain.taint_analysis || 'N/A')}</p>
+      </div>
+    `;
+  }
+
+  let reasonHtml = '';
+  if (vuln.reason) {
+    reasonHtml = `
+      <div style="background: #e8f5e9; padding: 12px; border-radius: 4px; margin: 15px 0; border-left: 4px solid #28a745;">
+        <h4 style="color: #28a745; margin-bottom: 8px;">✅ Por que é explorável neste código</h4>
+        <p>${escapeHtml(vuln.reason)}</p>
+      </div>
+    `;
+  }
 
   return `
     <div class="vulnerability ${severityClass}">
       <div class="vuln-header">
-        <span class="vuln-id">${vuln.vulnerability.cve_id} - ${vuln.vulnerability.package}@${vuln.vulnerability.current_version}</span>
-        <span class="severity ${severityClass}">${vuln.vulnerability.severity}</span>
+        <span class="vuln-id">${cveId} - ${pkgName}@${version}</span>
+        <span class="severity ${severityClass}">${severity}</span>
       </div>
       <div class="vuln-details">
-        <p><strong>📌 Description:</strong> ${vuln.vulnerability.affected_versions.join(', ')}</p>
-        <p><strong>🎯 Confidence:</strong> ${vuln.confidence}%</p>
-        ${vuln.call_chain ? `<p><strong>🔗 Call Chain:</strong> ${vuln.call_chain.entry_point} → ${vuln.call_chain.path.join(' → ')}</p>` : ''}
-        ${vuln.reason ? `<p><strong>📝 Reason:</strong> ${escapeHtml(vuln.reason)}</p>` : ''}
+        <p><strong>📌 Versões Afetadas:</strong> ${affectedVers}</p>
+        <p><strong>🎯 Reachability Confidence:</strong> ${vuln.confidence}%</p>
+
+        ${callChainHtml}
+        ${reasonHtml}
+        ${enrichmentHtml}
 
         <div class="remediation-section">
-          <span class="remediation-type ${typeClass}">${vuln.remediation.type}</span>
-          <h4>💡 Remediation</h4>
-          <p>${escapeHtml(vuln.remediation.description)}</p>
-          ${vuln.remediation.required_version ? `<p><strong>Target version:</strong> ${escapeHtml(vuln.remediation.required_version)}</p>` : ''}
-          ${vuln.remediation.breaking_changes !== undefined ? `<p><strong>Breaking changes:</strong> ${vuln.remediation.breaking_changes ? 'Yes ⚠️' : 'No ✓'}</p>` : ''}
+          ${remediation.type ? `<span class="remediation-type ${typeClass}">${remediation.type}</span>` : ''}
+          <h4>💡 Correção</h4>
+          <p>${escapeHtml(remediation.description || 'N/A')}</p>
+          ${remediation.required_version ? `<p><strong>📦 Versão Alvo:</strong> ${escapeHtml(remediation.required_version)}</p>` : ''}
+          ${remediation.action ? `<p><strong>⌨️ Comando:</strong> <code style="background: #2d2d2d; color: #f8f8f2; padding: 8px; border-radius: 4px; display: block;">${escapeHtml(remediation.action)}</code></p>` : ''}
+          ${remediation.effort_estimate ? `<p><strong>⏱️ Esforço:</strong> ${escapeHtml(remediation.effort_estimate)}</p>` : ''}
+          ${remediation.breaking_changes !== undefined ? `<p><strong>⚠️ Quebra de Compatibilidade:</strong> ${remediation.breaking_changes ? 'Sim' : 'Não'}</p>` : ''}
           ${
-            vuln.remediation.changes_needed && vuln.remediation.changes_needed.length > 0
+            remediation.changes_needed && remediation.changes_needed.length > 0
               ? `
-            <p><strong>Code changes needed:</strong></p>
+            <p><strong>🔧 Ajustes Necessários:</strong></p>
             <ul>
-              ${vuln.remediation.changes_needed.map((c: string) => `<li>${escapeHtml(c)}</li>`).join('')}
+              ${remediation.changes_needed.map((c: string) => `<li>${escapeHtml(c)}</li>`).join('')}
             </ul>
           `
               : ''
           }
-          ${vuln.remediation.action ? `<p><strong>Action:</strong> <code>${escapeHtml(vuln.remediation.action)}</code></p>` : ''}
-          ${vuln.remediation.effort_estimate ? `<p><strong>⏱️ Effort:</strong> ${escapeHtml(vuln.remediation.effort_estimate)}</p>` : ''}
-          ${vuln.remediation.notes ? `<p><strong>Notes:</strong> ${escapeHtml(vuln.remediation.notes)}</p>` : ''}
+          ${remediation.notes ? `<p><strong>📝 Notas:</strong> ${escapeHtml(remediation.notes)}</p>` : ''}
         </div>
       </div>
     </div>
   `;
+}
+
+function getPriorityColor(score: number): string {
+  if (score >= 80) return '#ff4757';
+  if (score >= 60) return '#ff9500';
+  if (score >= 40) return '#ffc107';
+  return '#28a745';
+}
+
+function getPriorityBackground(priority: string): string {
+  switch (priority.toUpperCase()) {
+    case 'CRITICAL':
+      return '#ff4757';
+    case 'HIGH':
+      return '#ff9500';
+    case 'MEDIUM':
+      return '#ffc107';
+    case 'LOW':
+      return '#28a745';
+    default:
+      return '#667eea';
+  }
 }
 
 function escapeHtml(text: string): string {

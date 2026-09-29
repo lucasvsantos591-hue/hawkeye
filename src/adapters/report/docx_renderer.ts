@@ -297,7 +297,11 @@ function createExposureSection(exposure: any): (Paragraph | Table)[] {
 
 export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> {
   const sections: (Paragraph | Table)[] = [];
-  const reachableVulnerabilities = result.results.filter((r) => r.is_reachable);
+
+  // Use enriched results if available
+  const enrichedResults = (result as any).enriched_results;
+  const displayResults = enrichedResults || result.results;
+  const reachableVulnerabilities = displayResults.filter((r: any) => r.is_reachable);
 
   // ========== CAPA ==========
   sections.push(
@@ -359,13 +363,17 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
     '1. Sumário Executivo .............................................................................................  3',
     '2. Como Ler Este Relatório .......................................................................................  3',
     ...reachableVulnerabilities.map(
-      (_, i) =>
-        `${i + 3}. ${result.results[i].vulnerability.cve_id} · ${result.results[i].vulnerability.package} ......................................................................................  ${i + 4}`,
+      (_: any, i: number) => {
+        const vuln = displayResults[i];
+        const cveId = vuln.cve_id || vuln.vulnerability?.cve_id || 'CVE-UNKNOWN';
+        const pkg = vuln.package || vuln.vulnerability?.package || 'unknown';
+        return `${i + 3}. ${cveId} · ${pkg} ......................................................................................  ${i + 4}`;
+      }
     ),
     `${reachableVulnerabilities.length + 3}. Plano de Ação e Referências ...............................................................................  ${reachableVulnerabilities.length + 4}`,
   ];
 
-  tocItems.forEach((item) => {
+  tocItems.forEach((item: string) => {
     sections.push(
       new Paragraph({
         children: [new TextRun({ text: item, size: 20, color: COLORS.BLACK, font: 'Calibri' })],
@@ -417,18 +425,23 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
   }
 
   // ========== UMA PÁGINA POR CVE ALCANÇÁVEL ==========
-  reachableVulnerabilities.forEach((finding, idx) => {
-    const vuln = finding.vulnerability;
-    const severity = vuln.severity;
+  reachableVulnerabilities.forEach((finding: any, idx: number) => {
+    // Handle both enriched and non-enriched data
+    const vuln = finding.vulnerability || finding;
+    const severity = finding.severity || vuln.severity || 'UNKNOWN';
     const severityColor =
       severity === 'CRITICAL' ? COLORS.VERMELHO : severity === 'HIGH' ? COLORS.LARANJA : severity === 'MEDIUM' ? COLORS.AZUL : COLORS.VERDE;
 
     // Header com barra colorida
+    const cveId = finding.cve_id || vuln.cve_id;
+    const pkgName = finding.package || vuln.package;
+    const affectedVersions = (finding.affected_versions || vuln.affected_versions || []).join(', ');
+
     sections.push(
       new Paragraph({
         children: [
           new TextRun({
-            text: `${vuln.cve_id}  ·  ${vuln.package}  ·  SEVERIDADE ${severity}`,
+            text: `${cveId}  ·  ${pkgName}  ·  SEVERIDADE ${severity}`,
             bold: true,
             size: 22,
             color: COLORS.WHITE,
@@ -445,12 +458,18 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
     // Descrição breve
     sections.push(
       createText(
-        `${vuln.affected_versions} não bloqueiam ${finding.vulnerability.cve_id} em ${finding.vulnerability.package}. Permite operação de ${finding.reason || 'operação perigosa'}.`,
+        `${affectedVersions} não bloqueiam ${cveId} em ${pkgName}. Permite operação de ${finding.reason || 'operação perigosa'}.`,
         { size: 9 },
       ),
     );
 
-    // Tabela de Alcançabilidade
+    // Tabela de Alcançabilidade - usando dados enriquecidos quando disponíveis
+    const epssScore = finding.enrichment?.epss?.score
+      ? `${Number(finding.enrichment.epss.score).toFixed(1)}/100 (p${Number(finding.enrichment.epss.percentile).toFixed(0)})`
+      : '—';
+    const cisaKev = finding.enrichment?.cisa_kev?.is_known_exploited ? 'Sim — CISA KEV' : 'Não listada';
+    const priorityDisplay = finding.priority_score !== undefined ? `${finding.priority_score}/100 — ${finding.priority}` : severity;
+
     sections.push(
       createTable(
         ['Alcançabilidade', 'Confiança', 'EPSS', 'CISA KEV', 'Prioridade'],
@@ -458,13 +477,18 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
           [
             `Nível ${finding.reachability_level}`,
             `${finding.confidence}%`,
-            `${vuln.epss_score?.toFixed(1) || '—'}/100`,
-            vuln.is_exploited_in_wild ? 'Sim' : 'Não listada',
-            severity,
+            epssScore,
+            cisaKev,
+            priorityDisplay,
           ],
         ],
       ),
     );
+
+    // Priority reasoning from enrichment
+    if (finding.priority_reasoning) {
+      sections.push(createText(`Justificativa: ${finding.priority_reasoning}`, { size: 9, italic: true }));
+    }
 
     sections.push(createHeading('Cadeia de exploração', 2));
 
@@ -500,24 +524,29 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
 
     sections.push(createHeading('Correção', 2));
 
+    const requiredVersion = finding.remediation?.required_version || finding.required_version || 'latest';
+    const effortEstimate = finding.remediation?.effort_estimate || finding.effort_estimate || 'A determinar';
+    const hasBreakingChanges = finding.remediation?.breaking_changes || finding.breaking_changes;
+    const changesNeeded = finding.remediation?.changes_needed || finding.changes_needed;
+
     sections.push(
       ...createCodeBlock(
-        `npm install ${vuln.package}@${finding.remediation.required_version || 'latest'} && npm test`,
+        `npm install ${pkgName}@${requiredVersion} && npm test`,
         'Comando:',
       ),
     );
 
     sections.push(
-      createText(`Esforço: ${finding.remediation.effort_estimate || 'A determinar'}`, { bold: true, size: 9 }),
+      createText(`Esforço: ${effortEstimate}`, { bold: true, size: 9 }),
     );
 
-    if (finding.remediation.breaking_changes) {
-      sections.push(createText('⚠️ Quebra de compatibilidade: sim (5.x removeu variantes legadas)', { size: 9 }));
+    if (hasBreakingChanges) {
+      sections.push(createText('⚠️ Quebra de compatibilidade: sim', { size: 9 }));
     }
 
-    if (finding.remediation.changes_needed && finding.remediation.changes_needed.length > 0) {
+    if (changesNeeded && Array.isArray(changesNeeded) && changesNeeded.length > 0) {
       sections.push(createText('Ajustes necessários:', { bold: true, size: 9 }));
-      sections.push(...createBulletList(finding.remediation.changes_needed.map((c) => c)));
+      sections.push(...createBulletList(changesNeeded.map((c: string) => c)));
     }
 
     if (idx < reachableVulnerabilities.length - 1) {
@@ -532,10 +561,10 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
 
   sections.push(createHeading('Sequência de Remediação', 2));
 
-  const actionItems = reachableVulnerabilities.map((r) => [
-    `Dia 1–2: ${r.vulnerability.cve_id}`,
-    r.remediation.effort_estimate || 'A determinar',
-    r.remediation.type,
+  const actionItems = reachableVulnerabilities.map((r: any) => [
+    `Dia 1–2: ${r.cve_id || r.vulnerability.cve_id}`,
+    r.remediation?.effort_estimate || 'A determinar',
+    r.remediation?.type || 'MINOR',
   ]);
 
   if (actionItems.length > 0) {

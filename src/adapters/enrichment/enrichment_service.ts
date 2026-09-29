@@ -154,7 +154,12 @@ class EnrichmentService {
       priority,
       priority_score: priorityScore,
       priority_reasoning: priorityReasoning,
-    };
+      // Preserve original findings data
+      call_chain: finding.call_chain,
+      reason: finding.reason,
+      remediation: finding.remediation,
+      vulnerability: finding.vulnerability,
+    } as any;
   }
 
   /**
