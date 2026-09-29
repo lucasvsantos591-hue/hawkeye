@@ -1,9 +1,25 @@
 # 🎯 Hawkeye
 
+[![CI Status](https://github.com/lucasvsantos591-hue/hawkeye/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasvsantos591-hue/hawkeye/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.2+-blue)](https://www.typescriptlang.org/)
+
 > **Precision Vulnerability Reachability Analysis**  
 > One Shot. One Target. No False Positives.
 >
 > Go beyond version-based scanning to determine if a vulnerability is truly exploitable in your code.
+
+## ✨ Why Hawkeye?
+
+**80-90% of CVE alerts are false positives.** Traditional SCA tools alert on every dependency version mismatch,
+regardless of whether your code actually uses the vulnerable function.
+
+Hawkeye answers: **"Is this CVE actually reachable in MY code?"**
+
+**Result:** Reduce noise, focus on real risks, and ship faster with confidence.
+
+---
 
 ## 🎯 O Problema
 
@@ -18,7 +34,7 @@ Elas então correlacionam EPSS (Exploit Prediction Scoring System) + KEV (Known 
 
 **Consequência:** Seu time gasta horas auditando vulnerabilidades que não são exploráveis, ou deprioritiza as que realmente importam.
 
-### VRA: Análise de Reachability (Alcançabilidade)
+### Hawkeye: Análise de Reachability (Alcançabilidade)
 
 VRA responde: **"Essa vulnerabilidade é realmente alcançável no MEU código?"**
 
@@ -57,7 +73,7 @@ export function fetchPublicData(url) {
 ❌ Resultado: 2 horas de testes e deployment para nada
 ```
 
-### Com VRA (Análise de Reachability)
+### Com Hawkeye (Análise de Reachability)
 ```
 1. Scanner SCA descobre: "lodash@4.15.0 tem CVE-YYYY"
 2. VRA analisa: Essa função vulnerável é usada?
