@@ -7,6 +7,8 @@ import { renderHtmlReport } from '../report/render-html.js';
 import { renderMarkdownReport } from '../report/render-markdown.js';
 import { renderDocxReport } from '../../adapters/report/docx_renderer.js';
 import { enrichmentService } from '../../adapters/enrichment/enrichment_service.js';
+import { loadContext } from '../../adapters/context/context_loader.js';
+import { createContextProcessor } from '../../adapters/context/context_processor.js';
 
 export interface ReportPipelineOptions {
   input: string;
@@ -17,6 +19,7 @@ export interface ReportPipelineOptions {
   aiBaseUrl?: string;
   aiModel?: string;
   enrichment?: boolean;
+  context?: string;
 }
 
 export interface ReportPipelineDeps {
@@ -50,6 +53,26 @@ export async function runReportPipeline(
     } catch (error) {
       console.warn(`⚠️ Warning: CVE enrichment failed: ${(error as Error).message}`);
       // Continue without enrichment
+    }
+  }
+
+  // Optionally apply infrastructure context (security gates, WAF rules, auth, etc.)
+  if (opts.context) {
+    try {
+      const hawkeyeContext = loadContext(opts.context);
+      const processor = createContextProcessor(hawkeyeContext);
+      const contextualized = await processor.process(result.results);
+
+      // Convert Map to object for JSON serialization
+      const contextualizedObj: Record<string, unknown> = {};
+      contextualized.forEach((value, key) => {
+        contextualizedObj[key] = value;
+      });
+      (result as any).contextualized_findings = contextualizedObj;
+      console.log(`✅ Infrastructure context applied from: ${opts.context}`);
+    } catch (error) {
+      console.warn(`⚠️ Warning: Context processing failed: ${(error as Error).message}`);
+      // Continue without context
     }
   }
 
@@ -157,6 +180,10 @@ export const reportCommand = {
         type: 'boolean',
         default: false,
         description: 'Enrich findings with CVE context (CISA KEV + FIRST EPSS)',
+      })
+      .option('context', {
+        type: 'string',
+        description: 'Path to Hawkeye context file (YAML/JSON) for infrastructure validation',
       });
   },
 
@@ -170,6 +197,7 @@ export const reportCommand = {
       aiBaseUrl: argv['ai-base-url'],
       aiModel: argv['ai-model'],
       enrichment: argv.enrichment,
+      context: argv.context,
     };
 
     try {
@@ -177,6 +205,10 @@ export const reportCommand = {
 
       if (options.enrichment) {
         console.log(`🔍 Enriching findings with CVE context (CISA KEV + FIRST EPSS)...`);
+      }
+
+      if (options.context) {
+        console.log(`🛡️ Applying infrastructure context from: ${options.context}`);
       }
 
       if (options.aiProvider && options.aiProvider !== 'none') {

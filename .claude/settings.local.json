@@ -36,7 +36,20 @@
       "Bash(timeout 30 npx vitest run tests/unit/provider_factory.test.ts tests/unit/report.test.ts 2>&1)",
       "Bash(npm audit *)",
       "Bash(curl -s -I https://github.com/lucasvsantos591-hue/hawkeye)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(node dist/cli/index.js report tests/fixtures/analysis-results/sample-basic.json --enrichment --format json)",
+      "Bash(tee /tmp/enrichment-report.json)",
+      "Bash(awk '{print \"  \" $9 \" \\(\" $5 \"\\)\"}')",
+      "Bash(SP=\"/tmp/claude-1001/-home-usuario-vra-project/50bdd9fe-f4f1-4b5d-bd35-51e3d4df0f6c/scratchpad\" && mkdir -p \"$SP\" && python3 -m venv \"$SP/venv\" && \"$SP/venv/bin/pip\" install -q python-docx && echo \"OK: $\\(\"$SP/venv/bin/python\" -c 'import docx; print\\(docx.__version__ if hasattr\\(docx,\"__version__\"\\) else \"python-docx instalado\"\\)'\\)\")",
+      "Bash(python3 -c \"import lxml; print\\('lxml OK', lxml.__version__ if hasattr\\(lxml,'__version__'\\) else ''\\)\")",
+      "Bash(python3 -c \"import docx\")",
+      "Bash(mkdir -p tools)",
+      "Bash(cp /tmp/claude-1001/-home-usuario-vra-project/50bdd9fe-f4f1-4b5d-bd35-51e3d4df0f6c/scratchpad/gen_v2.py tools/gen_report_prototype.py)",
+      "Bash(npm view *)",
+      "Bash(grep -E \"error|^$\")",
+      "Bash(node *)",
+      "Bash(unzip -l /tmp/test-report.docx)",
+      "Bash(git ls-remote *)"
     ]
   }
 }
