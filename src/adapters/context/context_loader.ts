@@ -65,4 +65,25 @@ function validateContext(context: HawkeyeContext): void {
       throw new Error('validation.validators must be array');
     }
   }
+
+  if (context.exposure) {
+    if (context.exposure.is_internet_facing !== undefined && typeof context.exposure.is_internet_facing !== 'boolean') {
+      throw new Error('exposure.is_internet_facing must be boolean');
+    }
+
+    if (context.exposure.detection_methods !== undefined && !Array.isArray(context.exposure.detection_methods)) {
+      throw new Error('exposure.detection_methods must be array');
+    }
+
+    if (context.exposure.verified_endpoints !== undefined && !Array.isArray(context.exposure.verified_endpoints)) {
+      throw new Error('exposure.verified_endpoints must be array');
+    }
+
+    if (context.exposure.detection_confidence !== undefined) {
+      const conf = context.exposure.detection_confidence;
+      if (typeof conf !== 'number' || conf < 0 || conf > 100) {
+        throw new Error('exposure.detection_confidence must be number between 0 and 100');
+      }
+    }
+  }
 }

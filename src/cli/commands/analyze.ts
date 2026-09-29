@@ -1,6 +1,9 @@
 import { Argv } from 'yargs';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ExposureDetectionService } from '../../adapters/exposure-detection/index.js';
+import { loadContext } from '../../adapters/context/context_loader.js';
+import type { HawkeyeContext } from '../../types/context.js';
 
 export interface AnalyzeOptions {
   path: string;
@@ -11,6 +14,8 @@ export interface AnalyzeOptions {
   cache?: string;
   verbose?: boolean;
   debug?: boolean;
+  'detect-exposure'?: boolean;
+  context?: string;
 }
 
 export const analyzeCommand = {
@@ -50,6 +55,15 @@ export const analyzeCommand = {
         type: 'string',
         default: './.vra-cache',
         description: 'Cache directory for vulnerabilities',
+      })
+      .option('detect-exposure', {
+        type: 'boolean',
+        default: false,
+        description: 'Detect internet-facing exposure (DNS, SSL, HTTP)',
+      })
+      .option('context', {
+        type: 'string',
+        description: 'Path to Hawkeye context file (JSON/YAML)',
       });
   },
 
@@ -65,6 +79,40 @@ export const analyzeCommand = {
       console.log(`📁 Analyzing project: ${options.path}`);
       console.log(`🔍 Reachability level: ${options.level}`);
 
+      // Load context if provided
+      let context: HawkeyeContext = {};
+      if (options.context) {
+        if (!fs.existsSync(options.context)) {
+          throw new Error(`Context file not found: ${options.context}`);
+        }
+        context = loadContext(options.context);
+        console.log(`📋 Context loaded from: ${options.context}`);
+      }
+
+      // Detect exposure if requested
+      if (options['detect-exposure']) {
+        console.log(`\n🔍 Detecting internet-facing exposure...`);
+
+        // Extract domain from context or derive from project name
+        const domain =
+          context.application?.name ||
+          path.basename(options.path).replace(/[^a-zA-Z0-9-]/g, '');
+
+        if (!domain || domain === path.basename(options.path)) {
+          console.warn(
+            `⚠️  No domain specified in context.application.name. Skipping exposure detection.`,
+          );
+        } else {
+          const exposureService = new ExposureDetectionService(options.verbose);
+          const exposureContext = await exposureService.detectExposure({
+            domain,
+            verbose: options.verbose,
+          });
+          context.exposure = exposureContext;
+          console.log(`✓ Exposure detection complete\n`);
+        }
+      }
+
       // TODO: Implement actual analysis logic
       // This is a placeholder that will call the Dart core via FFI or subprocess
 
@@ -73,6 +121,7 @@ export const analyzeCommand = {
         project_path: options.path,
         analysis_timestamp: new Date().toISOString(),
         language: options.language || 'unknown',
+        context: context,
         total_vulnerabilities: 0,
         reachable_vulnerabilities: 0,
         overall_risk_score: 0,

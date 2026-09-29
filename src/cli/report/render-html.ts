@@ -216,6 +216,101 @@ export function renderHtmlReport(result: AnalysisResult, meta: RenderMeta): stri
     li {
       margin-bottom: 5px;
     }
+    .exposure-section {
+      padding: 30px;
+      background: #f0f8ff;
+      border-left: 5px solid #0066cc;
+      margin: 20px 0;
+    }
+    .exposure-section h3 {
+      color: #0066cc;
+      margin-bottom: 15px;
+      font-size: 1.5em;
+    }
+    .exposure-status {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .exposure-status-card {
+      flex: 1;
+      min-width: 200px;
+      padding: 15px;
+      background: white;
+      border-radius: 6px;
+      border-left: 4px solid #0066cc;
+    }
+    .exposure-status-card.internet-facing {
+      border-left-color: #ff4757;
+    }
+    .exposure-status-card.internal-only {
+      border-left-color: #28a745;
+    }
+    .exposure-status-card .status-label {
+      font-weight: bold;
+      color: #0066cc;
+      margin-bottom: 5px;
+    }
+    .exposure-status-card .status-value {
+      font-size: 1.2em;
+      color: #333;
+    }
+    .exposure-details {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 15px;
+    }
+    .exposure-detail-box {
+      padding: 15px;
+      background: white;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+    }
+    .exposure-detail-box h4 {
+      color: #0066cc;
+      margin-bottom: 10px;
+      font-size: 1.1em;
+    }
+    .endpoint-item {
+      padding: 10px;
+      background: #f9f9f9;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      border-left: 3px solid #0066cc;
+      font-family: 'Courier New', monospace;
+      font-size: 0.95em;
+      overflow-x: auto;
+    }
+    .detection-method {
+      display: inline-block;
+      background: #e8f4ff;
+      color: #0066cc;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.85em;
+      margin-right: 5px;
+      margin-bottom: 5px;
+    }
+    .confidence-bar {
+      width: 100%;
+      height: 24px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 5px;
+    }
+    .confidence-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #28a745, #ffc107);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 0.85em;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -246,6 +341,8 @@ export function renderHtmlReport(result: AnalysisResult, meta: RenderMeta): stri
         <div class="label">Risk Score</div>
       </div>
     </div>
+
+    ${result.context?.exposure ? renderExposureSection(result.context.exposure) : ''}
 
     <div class="content">
       <div class="section">
@@ -285,6 +382,131 @@ export function renderHtmlReport(result: AnalysisResult, meta: RenderMeta): stri
   </div>
 </body>
 </html>`;
+}
+
+function renderExposureSection(exposure: any): string {
+  const isInternetFacing = exposure.is_internet_facing ? 'YES - Publicly Accessible' : 'NO - Internal Only';
+  const statusClass = exposure.is_internet_facing ? 'internet-facing' : 'internal-only';
+  const statusIcon = exposure.is_internet_facing ? '🌐' : '🔒';
+
+  let detectionMethodsHtml = '';
+  if (exposure.detection_methods && Array.isArray(exposure.detection_methods)) {
+    detectionMethodsHtml = exposure.detection_methods
+      .map((method: string) => `<span class="detection-method">${method}</span>`)
+      .join('');
+  }
+
+  let endpointsHtml = '';
+  if (exposure.verified_endpoints && Array.isArray(exposure.verified_endpoints)) {
+    endpointsHtml = exposure.verified_endpoints
+      .map(
+        (endpoint: any) =>
+          `<div class="endpoint-item">${endpoint.url} (${endpoint.method})</div>`,
+      )
+      .join('');
+  }
+
+  let dnsRecordsHtml = '';
+  if (exposure.dns_records) {
+    const records = exposure.dns_records;
+    const aRecords = records.a_records ? records.a_records.join(', ') : 'None';
+    const aaaaRecords = records.aaaa_records ? records.aaaa_records.join(', ') : 'None';
+    dnsRecordsHtml = `
+      <p><strong>A Records:</strong> ${aRecords}</p>
+      <p><strong>AAAA Records:</strong> ${aaaaRecords}</p>
+    `;
+  }
+
+  let sslHtml = '';
+  if (exposure.ssl_certificate) {
+    const cert = exposure.ssl_certificate;
+    sslHtml = `
+      <p><strong>Subject:</strong> ${cert.subject || 'N/A'}</p>
+      <p><strong>Issuer:</strong> ${cert.issuer || 'N/A'}</p>
+      <p><strong>Valid From:</strong> ${cert.valid_from || 'N/A'}</p>
+      <p><strong>Valid To:</strong> ${cert.valid_to || 'N/A'}</p>
+      <p><strong>Self-Signed:</strong> ${cert.is_self_signed ? 'Yes ⚠️' : 'No ✓'}</p>
+    `;
+  }
+
+  let cdnHtml = '';
+  if (exposure.cdn_info && exposure.cdn_info.detected) {
+    cdnHtml = `<p><strong>CDN Provider:</strong> ${exposure.cdn_info.provider || 'Detected'}</p>`;
+  }
+
+  return `
+    <div class="exposure-section">
+      <h3>${statusIcon} Internet-Facing Exposure Detection</h3>
+
+      <div class="exposure-status">
+        <div class="exposure-status-card ${statusClass}">
+          <div class="status-label">Internet-Facing Status</div>
+          <div class="status-value">${isInternetFacing}</div>
+        </div>
+        <div class="exposure-status-card">
+          <div class="status-label">Detection Confidence</div>
+          <div class="status-value">
+            <div class="confidence-bar">
+              <div class="confidence-fill" style="width: ${exposure.detection_confidence || 0}%">
+                ${exposure.detection_confidence || 0}%
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="exposure-details">
+        <div class="exposure-detail-box">
+          <h4>🔍 Detection Methods</h4>
+          ${detectionMethodsHtml || '<p>No detection methods used</p>'}
+        </div>
+
+        ${
+          exposure.verified_endpoints && exposure.verified_endpoints.length > 0
+            ? `<div class="exposure-detail-box">
+          <h4>🌐 Verified Endpoints</h4>
+          ${endpointsHtml}
+        </div>`
+            : ''
+        }
+
+        ${
+          exposure.dns_records
+            ? `<div class="exposure-detail-box">
+          <h4>📡 DNS Records</h4>
+          ${dnsRecordsHtml}
+        </div>`
+            : ''
+        }
+
+        ${
+          exposure.ssl_certificate
+            ? `<div class="exposure-detail-box">
+          <h4>🔐 SSL Certificate</h4>
+          ${sslHtml}
+        </div>`
+            : ''
+        }
+
+        ${
+          cdnHtml
+            ? `<div class="exposure-detail-box">
+          <h4>☁️ CDN Information</h4>
+          ${cdnHtml}
+        </div>`
+            : ''
+        }
+      </div>
+
+      ${
+        exposure.verification_timestamp
+          ? `<p style="margin-top: 15px; color: #666; font-size: 0.9em;">
+        ⏰ Verification completed: ${new Date(exposure.verification_timestamp).toLocaleString()}
+      </p>`
+          : ''
+      }
+    </div>
+  `;
 }
 
 function renderVulnerability(vuln: any): string {

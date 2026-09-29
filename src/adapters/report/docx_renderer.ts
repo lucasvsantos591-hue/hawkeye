@@ -194,6 +194,107 @@ function createBulletList(items: string[]): Paragraph[] {
   );
 }
 
+function createExposureSection(exposure: any): (Paragraph | Table)[] {
+  const sections: (Paragraph | Table)[] = [];
+
+  if (!exposure) {
+    return sections;
+  }
+
+  sections.push(createHeading('3. Análise de Exposição à Internet'));
+
+  const isInternetFacing = exposure.is_internet_facing ? 'Sim - Publicamente Acessível' : 'Não - Apenas Interno';
+  const statusColor = exposure.is_internet_facing ? COLORS.VERMELHO : COLORS.VERDE;
+
+  sections.push(
+    createText(`Status: ${isInternetFacing}`, {
+      bold: true,
+      color: statusColor,
+    }),
+  );
+
+  if (exposure.detection_confidence !== undefined) {
+    sections.push(
+      createText(`Confiança da Detecção: ${exposure.detection_confidence}%`, {
+        size: 9,
+      }),
+    );
+  }
+
+  // Detection methods
+  if (exposure.detection_methods && Array.isArray(exposure.detection_methods) && exposure.detection_methods.length > 0) {
+    sections.push(createHeading('Métodos de Detecção Utilizados', 2));
+    sections.push(...createBulletList(exposure.detection_methods));
+  }
+
+  // DNS Records
+  if (exposure.dns_records) {
+    sections.push(createHeading('Registros DNS', 2));
+    const records = exposure.dns_records;
+    const dnsData: string[][] = [];
+
+    if (records.a_records && records.a_records.length > 0) {
+      dnsData.push(['A Records', records.a_records.join(', ')]);
+    }
+    if (records.aaaa_records && records.aaaa_records.length > 0) {
+      dnsData.push(['AAAA Records', records.aaaa_records.join(', ')]);
+    }
+
+    if (dnsData.length > 0) {
+      sections.push(createTable(['Tipo', 'Valor'], dnsData));
+    }
+  }
+
+  // SSL Certificate
+  if (exposure.ssl_certificate) {
+    sections.push(createHeading('Certificado SSL', 2));
+    const cert = exposure.ssl_certificate;
+    const certData: string[][] = [
+      ['Assunto', cert.subject || '—'],
+      ['Emissor', cert.issuer || '—'],
+      ['Válido de', cert.valid_from || '—'],
+      ['Válido até', cert.valid_to || '—'],
+      ['Auto-Assinado', cert.is_self_signed ? 'Sim ⚠️' : 'Não ✓'],
+    ];
+
+    sections.push(createTable(['Campo', 'Valor'], certData));
+  }
+
+  // Verified Endpoints
+  if (exposure.verified_endpoints && Array.isArray(exposure.verified_endpoints) && exposure.verified_endpoints.length > 0) {
+    sections.push(createHeading('Endpoints Verificados', 2));
+    const endpointData = exposure.verified_endpoints.map((ep: any) => [
+      ep.url || '—',
+      ep.method || '—',
+      ep.status_code ? String(ep.status_code) : '—',
+    ]);
+
+    sections.push(createTable(['URL', 'Método', 'Status'], endpointData));
+  }
+
+  // CDN Info
+  if (exposure.cdn_info && exposure.cdn_info.detected) {
+    sections.push(createHeading('Informações de CDN', 2));
+    sections.push(
+      createText(`Provedor: ${exposure.cdn_info.provider || 'Detectado'}`, {
+        size: 9,
+      }),
+    );
+  }
+
+  if (exposure.verification_timestamp) {
+    sections.push(
+      createText(`Verificação realizada em: ${new Date(exposure.verification_timestamp).toLocaleString('pt-BR')}`, {
+        italic: true,
+        size: 9,
+        color: COLORS.CINZA,
+      }),
+    );
+  }
+
+  return sections;
+}
+
 export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> {
   const sections: (Paragraph | Table)[] = [];
   const reachableVulnerabilities = result.results.filter((r) => r.is_reachable);
@@ -307,6 +408,13 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
   );
 
   sections.push(new Paragraph({ text: '', pageBreakBefore: true }));
+
+  // ========== SEÇÃO DE EXPOSIÇÃO À INTERNET ==========
+  if (result.context?.exposure) {
+    const exposureSections = createExposureSection(result.context.exposure);
+    sections.push(...exposureSections);
+    sections.push(new Paragraph({ text: '', pageBreakBefore: true }));
+  }
 
   // ========== UMA PÁGINA POR CVE ALCANÇÁVEL ==========
   reachableVulnerabilities.forEach((finding, idx) => {

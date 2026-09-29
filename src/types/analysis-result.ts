@@ -52,6 +52,7 @@ export interface AnalysisResult {
   overall_risk_score: number;
   summary?: AnalysisSummary;
   results: VulnerabilityFinding[];
+  context?: any;
 }
 
 export function assertAnalysisResult(data: unknown): AnalysisResult {
