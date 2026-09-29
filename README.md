@@ -1,14 +1,17 @@
-# 🎯 Hawkeye
+# 🎯 Hawkeye - V2.1
 
 [![CI Status](https://github.com/lucasvsantos591-hue/hawkeye/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasvsantos591-hue/hawkeye/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node.js 20+](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.2+-blue)](https://www.typescriptlang.org/)
+[![Hawkeye V2.1](https://img.shields.io/badge/Hawkeye-V2.1-blue.svg)](.)
 
 > **Precision Vulnerability Reachability Analysis**  
 > One Shot. One Target. No False Positives.
 >
 > Go beyond version-based scanning to determine if a vulnerability is truly exploitable in your code.
+>
+> **✨ NEW V2.1:** Internet-facing detection • CVE enrichment (CISA KEV + FIRST EPSS) • AI-powered remediation
 
 ## ✨ Why Hawkeye?
 
@@ -118,9 +121,72 @@ export function fetchPublicData(url) {
 
 ---
 
-## ✨ Características
+## ✨ Características V2.1
 
-### 🔍 Três Níveis de Análise de Alcançabilidade
+### ⭐ NOVO: CVE Enrichment Completo
+
+Hawkeye agora enriquece cada vulnerabilidade com dados do mundo real:
+
+**🔍 CISA KEV (Known Exploited Vulnerabilities)**
+- ✅ Identifica se a vulnerabilidade está sendo explorada na prática
+- ✅ Detecta uso em campanhas ransomware
+- ✅ Integrado na análise de prioridade
+
+**📊 FIRST EPSS (Exploit Prediction Scoring System)**
+- ✅ Score 0-100 da probabilidade de exploração nos próximos 30 dias
+- ✅ Percentil comparativo com outras vulnerabilidades
+- ✅ Dados atualizados continuamente
+
+**🎯 Priority Scoring Inteligente**
+```
+Priority Score = (EPSS × 0.4) + (CISA_KEV × 0.3) + (Reachability × 0.3)
+
+Exemplo:
+  EPSS: 7.8/100 (40%) = 3.12
+  CISA KEV explorado (30%) = 30
+  Reachability 95% confiança (30%) = 28.5
+  ──────────────────────
+  Total: 61.6 → HIGH prioridade
+```
+
+### 🌐 NOVO: Internet-Facing Exposure Detection
+
+Detecta automaticamente se sua aplicação está exposta à internet:
+
+**Métodos de Detecção:**
+- 🔍 **DNS Resolution** - IPs públicos vs privados
+- 🔐 **SSL Certificate** - HTTPS acessível
+- 🌐 **HTTP Probe** - Endpoints respondendo
+- ☁️ **CDN Detection** - Cloudflare, Akamai, AWS
+
+**Saída:**
+```json
+{
+  "is_internet_facing": true,
+  "detection_confidence": 92,
+  "detection_methods": ["DNS", "SSL", "HTTP_PROBE"],
+  "verified_endpoints": [...],
+  "ssl_certificate": {...},
+  "dns_records": {...}
+}
+```
+
+### 🤖 NOVO: AI-Powered Remediation
+
+Suporte integrado para múltiplos provedores de IA:
+
+- **Claude** (Anthropic)
+- **OpenAI** (GPT-4)
+- **Gemini** (Google)
+- **Custom** (OpenAI-compatible)
+
+Gera remediações inteligentes e contextualizadas:
+- Detecta breaking changes
+- Estima esforço realista
+- Sugere ajustes de código específicos
+- Recomenda versões seguras
+
+### 📊 Análise de Alcançabilidade - Três Níveis
 
 1. **Nível 1: Detecção de Importações**
    - Verifica se o pacote vulnerável é importado
@@ -175,29 +241,154 @@ npm install
 npm run build
 ```
 
-### Uso Básico: Workflow em Dois Passos
+---
 
-VRA separa análise determinística de enhancement com IA:
+## 📚 Documentação Completa
 
-**1️⃣ Análise (determinística, sem IA)**
-```bash
-# Gera JSON estruturado com vulnerabilidades e alcançabilidade
-vra analyze ./meu-app --level 2 --output analysis.json
+### Guias Disponíveis
+
+- **[USAGE.md](./USAGE.md)** - Guia prático de instalação e uso
+- **[WORKFLOW.md](./WORKFLOW.md)** - Diagramas visuais do fluxo de análise
+- **[INTELLIGENCE_FLOW.md](./INTELLIGENCE_FLOW.md)** - Como IA é integrada ao pipeline
+
+### Exemplos
+
+Veja a pasta `examples/` para:
+- Análise completa com exposição à internet
+- Configurações de IA
+- Estrutura de relatórios
+
+---
+
+## 🎯 Fluxo de Análise Completo
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  INPUT: Seu Projeto (package.json + código-fonte)          │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  1️⃣ ANALYZE - Detecção de Vulnerabilidades                 │
+│                                                              │
+│  ✓ Lê package.json (dependências)                          │
+│  ✓ AST Parsing (código-fonte)                              │
+│  ✓ Taint Analysis (rastreamento de dados)                  │
+│  ✓ Reachability (alcançabilidade)                          │
+│                                                              │
+│  OUTPUT: findings.json                                      │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  2️⃣ EXPOSE - Detecção de Exposição à Internet (OPCIONAL)   │
+│                                                              │
+│  ✓ DNS Resolution (IPs públicos/privados)                  │
+│  ✓ SSL Check (certificado HTTPS)                           │
+│  ✓ HTTP Probe (endpoints respondendo)                      │
+│  ✓ CDN Detection (Cloudflare, Akamai, etc)                 │
+│                                                              │
+│  OUTPUT: exposure.json                                      │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  3️⃣ REPORT - Enriquecimento + Relatório                    │
+│                                                              │
+│  ✓ CISA KEV (vulnerabilidades exploradas)                 │
+│  ✓ FIRST EPSS (probabilidade de exploração)               │
+│  ✓ Priority Scoring (fórmula inteligente)                 │
+│  ✓ Internet-Facing Context (se análise de exposição)      │
+│                                                              │
+│  OUTPUT: findings com enrichment                            │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  4️⃣ AI REMEDIATION (OPCIONAL - Claude/OpenAI/Gemini)      │
+│                                                              │
+│  ✓ Análise inteligente de cada CVE                        │
+│  ✓ Detecção de breaking changes                           │
+│  ✓ Estimativa de esforço                                  │
+│  ✓ Sugestões de código                                    │
+│                                                              │
+│  OUTPUT: Remediações AI-powered                            │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│  5️⃣ RESULTADO FINAL - HTML/DOCX/JSON                       │
+│                                                              │
+│  Cada CVE mostra:                                          │
+│  ├─ Cadeia de exploração (entry point + call chain)       │
+│  ├─ Por que é explorável (contexto técnico)               │
+│  ├─ Priority Score + EPSS + CISA KEV                      │
+│  ├─ Internet-facing status (se aplicável)                 │
+│  └─ Remediações (versão, código, esforço)                 │
+│                                                              │
+│  PRONTO PARA: Compartilhar, CI/CD, Integração             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**2️⃣ Relatório (com IA agnóstica opcional)**
+---
+
+### Uso Básico: Workflow V2.1 (Três Passos)
+
+Hawkeye agora integra análise de reachability + exposição à internet + enrichment CVE:
+
+**1️⃣ Análise de Vulnerabilidades (determinística)**
 ```bash
-# Sem IA: apenas estrutura as recomendações do analysis.json
-vra report analysis.json --format html --output relatorio.html --ai-provider none
+# Detecta vulnerabilidades e determina reachability
+node ./dist/cli/index.js analyze ./meu-app --level 2 --output findings.json
+```
 
-# Com Claude (requer ANTHROPIC_API_KEY ou --ai-token)
-vra report analysis.json --format html --ai-provider claude --output relatorio-claude.html
+**2️⃣ Exposição à Internet (NOVO - Opcional)**
+```bash
+# Verifica se a aplicação está internet-facing
+node ./dist/cli/index.js expose meu-dominio.com --output exposure.json
+```
 
-# Com OpenAI (requer OPENAI_API_KEY ou --ai-token)
-vra report analysis.json --format html --ai-provider openai --output relatorio-gpt.html
+**3️⃣ Relatório Enriquecido**
+```bash
+# SEM IA (rápido) - CISA KEV + FIRST EPSS + Priority Score
+node ./dist/cli/index.js report findings.json \
+  --enrichment \
+  --format html \
+  --output relatorio.html
 
-# Com Gemini (requer GEMINI_API_KEY ou GOOGLE_API_KEY ou --ai-token)
-vra report analysis.json --format html --ai-provider gemini
+# COM IA (inteligente) - Remediações AI-powered
+node ./dist/cli/index.js report findings.json \
+  --enrichment \
+  --ai-provider claude \
+  --ai-token sk-... \
+  --format html \
+  --output relatorio-inteligente.html
+```
+
+**Suporte a Múltiplos Provedores de IA:**
+```bash
+# OpenAI (GPT-4)
+node ./dist/cli/index.js report findings.json \
+  --ai-provider openai \
+  --ai-token sk-... \
+  --format html
+
+# Google Gemini
+node ./dist/cli/index.js report findings.json \
+  --ai-provider gemini \
+  --ai-token ... \
+  --format html
+```
+
+**Múltiplos Formatos de Saída:**
+```bash
+# HTML - Interativo, para visualização
+--format html --output relatorio.html
+
+# DOCX - Profissional, para compartilhamento
+--format docx --output relatorio.docx
+
+# Markdown - Para documentação/Git
+--format markdown --output relatorio.md
+
+# JSON - Para integração com ferramentas
+--format json --output relatorio.json
+```
 
 # Com endpoint customizado OpenAI-compatible (Ollama, Groq, Mistral, etc.)
 vra report analysis.json --format html --ai-provider custom --ai-base-url http://localhost:8000/v1 --ai-token test-key
