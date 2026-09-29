@@ -29,6 +29,7 @@ build/
 *.swo
 *~
 .DS_Store
+.claude/
 
 # Test coverage
 coverage/
