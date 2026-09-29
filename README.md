@@ -169,8 +169,8 @@ Hawkeye suporta análise de reachability para múltiplas linguagens:
 ### Instalação
 
 ```bash
-git clone https://github.com/seu-usuario/vra-project.git
-cd vra-project
+git clone https://github.com/lucasvsantos591-hue/hawkeye.git
+cd hawkeye
 npm install
 npm run build
 ```
@@ -580,6 +580,6 @@ Veja [CONTRIBUTORS.md](CONTRIBUTORS.md) para saber mais sobre quem faz Hawkeye p
 ## 📧 Suporte
 
 - 📖 [Documentação](./docs)
-- 🐛 [Rastreador de Issues](https://github.com/lucasvsantos591-hue/vra-project/issues)
-- 💬 [Discussões](https://github.com/lucasvsantos591-hue/vra-project/discussions)
-- 📧 Email: vra@example.com
+- 🐛 [Rastreador de Issues](https://github.com/lucasvsantos591-hue/hawkeye/issues)
+- 💬 [Discussões](https://github.com/lucasvsantos591-hue/hawkeye/discussions)
+- 📧 Email: lucasvsantos591@gmail.com
