@@ -1,0 +1,196 @@
+{
+  "project_name": "hawkeye-test",
+  "total_vulnerabilities": 4,
+  "reachable_vulnerabilities": 4,
+  "overall_risk_score": 85,
+  "summary": {
+    "critical_reachable": 0,
+    "high_reachable": 3,
+    "medium_reachable": 1,
+    "false_positives_filtered": 0
+  },
+  "context": {
+    "exposure": {
+      "is_internet_facing": true,
+      "detection_confidence": 92,
+      "detection_methods": ["DNS", "SSL", "HTTP_PROBE"],
+      "verified_endpoints": [
+        {
+          "url": "https://hawkeye-test.example.com",
+          "method": "GET",
+          "status_code": 200
+        },
+        {
+          "url": "http://hawkeye-test.example.com:8080",
+          "method": "GET",
+          "status_code": 200
+        }
+      ],
+      "dns_records": {
+        "a_records": ["192.168.1.100", "10.0.0.5"]
+      },
+      "ssl_certificate": {
+        "subject": "CN=hawkeye-test.example.com",
+        "issuer": "CN=Let's Encrypt Authority X3",
+        "valid_from": "2024-09-01T00:00:00Z",
+        "valid_to": "2025-09-01T00:00:00Z",
+        "is_self_signed": false
+      },
+      "cdn_info": {
+        "detected": false
+      },
+      "verification_timestamp": "2026-09-29T00:59:00Z"
+    }
+  },
+  "results": [
+    {
+      "vulnerability": {
+        "cve_id": "CVE-2018-16487",
+        "package": "lodash",
+        "current_version": "4.17.15",
+        "affected_versions": ["<4.17.19"],
+        "severity": "HIGH"
+      },
+      "is_reachable": true,
+      "reachability_level": 3,
+      "confidence": 95,
+      "reason": "Prototype pollution em lodash.defaultsDeep usado diretamente com entrada do usuário",
+      "call_chain": {
+        "entry_point": "POST /api/process-data",
+        "path": [
+          "src/index.js:main",
+          "src/routes/index.js:setupRoutes()",
+          "src/handlers/data.js:processUserData(req.body)",
+          "_.defaultsDeep(data.items, ...)"
+        ],
+        "taint_analysis": "req.body → data.items → _.defaultsDeep()"
+      },
+      "remediation": {
+        "type": "MINOR",
+        "description": "Atualizar lodash para versão 4.17.19 ou posterior que bloqueia prototype pollution",
+        "required_version": "4.17.19",
+        "breaking_changes": false,
+        "changes_needed": [
+          "npm install lodash@5.0.0 --save",
+          "Validar entrada com zod .strict() no endpoint",
+          "Substituir _.assign() por Object.assign() em dados sensíveis"
+        ],
+        "action": "npm install lodash@5.0.0 --save",
+        "effort_estimate": "2–4 h",
+        "notes": "Quebra de compatibilidade: sim (5.x removeu variantes legadas). Ajustes: substituir _assign por Object.assign() e revisar src/handlers/data.js"
+      }
+    },
+    {
+      "vulnerability": {
+        "cve_id": "CVE-2017-11470",
+        "package": "request",
+        "current_version": "2.88.0",
+        "affected_versions": ["<2.88.2"],
+        "severity": "HIGH"
+      },
+      "is_reachable": true,
+      "reachability_level": 2,
+      "confidence": 92,
+      "reason": "Parâmetro URL não validado passado diretamente para request.get()",
+      "call_chain": {
+        "entry_point": "GET /api/fetch?url=...",
+        "path": [
+          "src/index.js:main",
+          "app.use(bodyParser)",
+          "express internals",
+          "src/handlers/fetch.js:fetchRemoteData()",
+          "request.get(url)"
+        ],
+        "taint_analysis": "req.query.url → request.get(url) SSRF"
+      },
+      "remediation": {
+        "type": "MINOR",
+        "description": "Atualizar request para versão 2.88.2 ou usar alternativa como axios/node-fetch com validação de URL",
+        "required_version": "2.88.2",
+        "breaking_changes": false,
+        "changes_needed": [
+          "npm install request@2.88.2 --save",
+          "Implementar URL whitelist no endpoint /api/fetch",
+          "Usar URL.parse() com validação de protocolo (apenas http/https)"
+        ],
+        "action": "npm install request@2.88.2 --save",
+        "effort_estimate": "5 min",
+        "notes": "Patch na mesma versão maior; sem quebra de compatibilidade"
+      }
+    },
+    {
+      "vulnerability": {
+        "cve_id": "CVE-2016-4055",
+        "package": "moment",
+        "current_version": "2.29.0",
+        "affected_versions": ["<2.29.4"],
+        "severity": "MEDIUM"
+      },
+      "is_reachable": true,
+      "reachability_level": 2,
+      "confidence": 85,
+      "reason": "Entrada do usuário passada para parsing de moment() sem validação",
+      "call_chain": {
+        "entry_point": "POST /api/schedule?date=...",
+        "path": [
+          "src/index.js:main",
+          "src/routes/index.js:setupRoutes()",
+          "src/handlers/schedule.js:parseDate(req.query.date)",
+          "moment(userDate).format()"
+        ],
+        "taint_analysis": "req.query.date → moment() ReDoS"
+      },
+      "remediation": {
+        "type": "MINOR",
+        "description": "Atualizar moment para versão 2.29.4 ou validar entrada antes de parsing",
+        "required_version": "2.29.4",
+        "breaking_changes": false,
+        "changes_needed": [
+          "npm install moment@2.29.4 --save",
+          "Validar formato de data com regex simples antes de moment()",
+          "Usar strict parsing: moment(date, 'YYYY-MM-DD', true)"
+        ],
+        "action": "npm install moment@2.29.4 --save",
+        "effort_estimate": "2–3 h",
+        "notes": "Minor version bump; adicionar validação de entrada é recomendado"
+      }
+    },
+    {
+      "vulnerability": {
+        "cve_id": "CVE-2017-1000112",
+        "package": "express",
+        "current_version": "4.16.0",
+        "affected_versions": ["<4.16.4"],
+        "severity": "HIGH"
+      },
+      "is_reachable": true,
+      "reachability_level": 2,
+      "confidence": 88,
+      "reason": "Prototype pollution no parsing de query string do express",
+      "call_chain": {
+        "entry_point": "GET /api/user?__proto__[isAdmin]=true",
+        "path": [
+          "src/index.js:main",
+          "src/routes/index.js:setupRoutes()",
+          "app.use(bodyParser)",
+          "express internals [querystring vulnerable parsing]",
+          "req.query access"
+        ],
+        "taint_analysis": "req.query → Object.prototype pollution"
+      },
+      "remediation": {
+        "type": "MINOR",
+        "description": "Atualizar express para versão 4.16.4 ou posterior",
+        "required_version": "4.16.4",
+        "breaking_changes": false,
+        "changes_needed": [
+          "npm install express@4.17.1 --save",
+          "Não há ajustes de código necessários após patch"
+        ],
+        "action": "npm install express@4.17.1 --save",
+        "effort_estimate": "5 min",
+        "notes": "Patch seguro; sem quebra de compatibilidade"
+      }
+    }
+  ]
+}
