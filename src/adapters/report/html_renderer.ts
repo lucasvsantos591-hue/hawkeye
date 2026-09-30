@@ -1,0 +1,348 @@
+import { AnalysisResult, VulnerabilityFinding } from '../../types/analysis-result.js';
+import type { HawkeyeContext } from '../context/context_loader.js';
+import { RiskRescorer, RescoreResult } from '../../core/risk_rescorer.js';
+
+/**
+ * Renders analysis results as HTML report with exposure context
+ */
+export class HTMLReportRenderer {
+  private result: AnalysisResult;
+  private rescorer: RiskRescorer;
+  private rescores: Map<string, RescoreResult>;
+
+  constructor(result: AnalysisResult, context?: HawkeyeContext | null) {
+    this.result = result;
+    this.rescorer = new RiskRescorer(context);
+    this.rescores = this.rescorer.rescoreFindings(result.results);
+  }
+
+  /**
+   * Render complete HTML report
+   */
+  render(): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hawkeye Vulnerability Report - ${this.result.project_name}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      border-radius: 8px;
+      margin-bottom: 30px;
+    }
+
+    h1 { font-size: 2em; margin-bottom: 10px; }
+    .metadata { display: flex; gap: 30px; flex-wrap: wrap; margin-top: 20px; }
+    .metadata-item { flex: 1; min-width: 150px; }
+    .metadata-label { font-size: 0.9em; opacity: 0.9; }
+    .metadata-value { font-size: 1.1em; font-weight: 600; }
+
+    .exposure-badge {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.9em;
+      margin-top: 10px;
+    }
+
+    .exposure-internet { background: #ff6b6b; color: white; }
+    .exposure-internal { background: #ffa94d; color: white; }
+    .exposure-isolated { background: #51cf66; color: white; }
+    .exposure-unknown { background: #adb5bd; color: white; }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .summary-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .summary-card.critical { border-left-color: #ff6b6b; }
+    .summary-card.high { border-left-color: #ffa94d; }
+    .summary-card.medium { border-left-color: #4ecdc4; }
+
+    .summary-label { color: #666; font-size: 0.9em; }
+    .summary-value { font-size: 2em; font-weight: 700; color: #333; margin-top: 10px; }
+
+    .rescoring-notice {
+      background: #e7f5ff;
+      border: 1px solid #a5d8ff;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+
+    .rescoring-notice strong { color: #1971c2; }
+
+    .vulnerabilities {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .vuln-card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      border-left: 4px solid #ddd;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .vuln-card.critical { border-left-color: #ff6b6b; }
+    .vuln-card.high { border-left-color: #ffa94d; }
+    .vuln-card.medium { border-left-color: #4ecdc4; }
+    .vuln-card.low { border-left-color: #95a5a6; }
+
+    .vuln-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 20px;
+      margin-bottom: 15px;
+    }
+
+    .vuln-title {
+      flex: 1;
+    }
+
+    .vuln-cve {
+      font-size: 0.9em;
+      color: #666;
+      margin-bottom: 5px;
+    }
+
+    .vuln-package {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    .score-badge {
+      background: #f0f0f0;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.85em;
+      white-space: nowrap;
+    }
+
+    .score-badge.original { color: #666; }
+    .score-badge.adjusted { background: #e7f5ff; color: #1971c2; }
+
+    .multiplier-badge {
+      background: #fff3cd;
+      color: #856404;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-size: 0.85em;
+      font-weight: 600;
+    }
+
+    .vuln-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+      font-size: 0.9em;
+    }
+
+    .detail-item { }
+    .detail-label { color: #999; font-size: 0.85em; }
+    .detail-value { color: #333; font-weight: 500; }
+
+    .tags {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .tag {
+      background: #f0f0f0;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-size: 0.8em;
+      color: #666;
+    }
+
+    .tag.reachable { background: #ffe7e7; color: #c92a2a; }
+    .tag.exploited { background: #ffe7e7; color: #c92a2a; }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+      color: #666;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    ${this.renderHeader()}
+    ${this.renderSummary()}
+    ${this.renderRescoringSummary()}
+    ${this.renderVulnerabilities()}
+    ${this.renderFooter()}
+  </div>
+</body>
+</html>`;
+  }
+
+  private renderHeader(): string {
+    const exposure = this.rescorer.getExposure();
+    const exposureClass = `exposure-${exposure || 'unknown'}`;
+
+    return `<header>
+      <h1>🎯 Hawkeye Vulnerability Report</h1>
+      <p>${this.result.project_name}</p>
+      <div class="metadata">
+        <div class="metadata-item">
+          <div class="metadata-label">Project Path</div>
+          <div class="metadata-value">${this.result.project_path || 'N/A'}</div>
+        </div>
+        <div class="metadata-item">
+          <div class="metadata-label">Generated</div>
+          <div class="metadata-value">${new Date(this.result.generated_at).toLocaleString()}</div>
+        </div>
+        <div class="metadata-item">
+          <div class="metadata-label">Network Exposure</div>
+          <div class="exposure-badge ${exposureClass}">${exposure || 'Unknown'}</div>
+        </div>
+      </div>
+    </header>`;
+  }
+
+  private renderSummary(): string {
+    const { critical_reachable, high_reachable, medium_reachable } = this.result.summary || {};
+
+    return `<div class="summary">
+      <div class="summary-card critical">
+        <div class="summary-label">Critical Vulnerabilities</div>
+        <div class="summary-value">${critical_reachable || 0}</div>
+      </div>
+      <div class="summary-card high">
+        <div class="summary-label">High Severity</div>
+        <div class="summary-value">${high_reachable || 0}</div>
+      </div>
+      <div class="summary-card medium">
+        <div class="summary-label">Medium Severity</div>
+        <div class="summary-value">${medium_reachable || 0}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Risk Score</div>
+        <div class="summary-value">${this.result.overall_risk_score}</div>
+      </div>
+    </div>`;
+  }
+
+  private renderRescoringSummary(): string {
+    const summary = this.rescorer.getSummary(this.result.results);
+
+    if (summary.averageMultiplier === 1.0) {
+      return '';
+    }
+
+    const direction = summary.averageMultiplier > 1.0 ? '↑ Increased' : '↓ Decreased';
+    const percentChange = Math.abs(
+      Math.round((summary.averageMultiplier - 1.0) * 100)
+    );
+
+    return `<div class="rescoring-notice">
+      <strong>⚠️ Risk Rescoring Applied:</strong><br>
+      Application exposure: <strong>${summary.exposure}</strong><br>
+      Risk scores adjusted by <strong>${direction} ${percentChange}%</strong> based on network exposure.
+      <br>Critical findings: ${summary.originalCritical} → ${summary.adjustedCritical}
+    </div>`;
+  }
+
+  private renderVulnerabilities(): string {
+    if (this.result.results.length === 0) {
+      return '<p style="text-align: center; padding: 40px; color: #666;">No vulnerabilities found! ✅</p>';
+    }
+
+    const vulns = this.result.results.map(finding => this.renderVulnerability(finding)).join('');
+
+    return `<div class="vulnerabilities">${vulns}</div>`;
+  }
+
+  private renderVulnerability(finding: VulnerabilityFinding): string {
+    const key = `${finding.vulnerability.cve_id}:${finding.vulnerability.package}`;
+    const rescore = this.rescores.get(key);
+    const riskLevel = rescore?.riskLevel.toLowerCase() || 'medium';
+
+    const tags = [];
+    if (finding.is_reachable) tags.push('<span class="tag reachable">Reachable</span>');
+    if (finding.vulnerability.is_exploited_in_wild)
+      tags.push('<span class="tag exploited">Exploited in Wild</span>');
+
+    return `<div class="vuln-card ${riskLevel}">
+      <div class="vuln-header">
+        <div class="vuln-title">
+          <div class="vuln-cve">${finding.vulnerability.cve_id}</div>
+          <div class="vuln-package">${finding.vulnerability.package}@${finding.vulnerability.current_version}</div>
+        </div>
+        <div>
+          <div class="score-badge original">Original: ${rescore?.originalScore || 0}</div>
+          <div class="score-badge adjusted">Adjusted: ${rescore?.adjustedScore || 0}</div>
+          ${rescore && rescore.multiplier !== 1.0 ? `<div class="multiplier-badge">×${rescore.multiplier.toFixed(1)}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="vuln-details">
+        <div class="detail-item">
+          <div class="detail-label">Severity</div>
+          <div class="detail-value">${finding.vulnerability.severity}</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Reachability</div>
+          <div class="detail-value">Level ${finding.reachability_level} (${finding.is_reachable ? '✓' : '✗'})</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">Confidence</div>
+          <div class="detail-value">${finding.confidence}%</div>
+        </div>
+        ${finding.vulnerability.epss_score ? `<div class="detail-item">
+          <div class="detail-label">EPSS Score</div>
+          <div class="detail-value">${finding.vulnerability.epss_score.toFixed(1)}</div>
+        </div>` : ''}
+      </div>
+
+      ${rescore ? `<div style="margin-top: 10px; font-size: 0.85em; color: #666;">
+        <strong>Rescoring:</strong> ${rescore.reason}
+      </div>` : ''}
+
+      <div class="tags">
+        ${tags.join('')}
+      </div>
+    </div>`;
+  }
+
+  private renderFooter(): string {
+    return `<footer>
+      <p>Generated by Hawkeye v${this.result.schema_version}</p>
+      <p>Report includes network exposure context and risk rescoring adjustments</p>
+    </footer>`;
+  }
+}

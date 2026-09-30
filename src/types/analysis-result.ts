@@ -46,7 +46,10 @@ export interface AnalysisSummary {
 }
 
 export interface AnalysisResult {
+  schema_version: string;
+  generated_at: string;
   project_name: string;
+  project_path?: string;
   total_vulnerabilities: number;
   reachable_vulnerabilities: number;
   overall_risk_score: number;
@@ -63,6 +66,8 @@ export function assertAnalysisResult(data: unknown): AnalysisResult {
   const obj = data as Record<string, unknown>;
 
   if (
+    typeof obj.schema_version !== 'string' ||
+    typeof obj.generated_at !== 'string' ||
     typeof obj.project_name !== 'string' ||
     typeof obj.total_vulnerabilities !== 'number' ||
     typeof obj.reachable_vulnerabilities !== 'number' ||

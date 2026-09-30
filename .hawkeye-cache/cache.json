@@ -1,0 +1,55 @@
+[
+  {
+    "key": "result:03ad1eab7f2ebff3:L1",
+    "value": {
+      "schema_version": "1.0.0",
+      "generated_at": "2026-09-30T01:27:30.921Z",
+      "project_name": ".",
+      "project_path": ".",
+      "total_vulnerabilities": 1,
+      "reachable_vulnerabilities": 1,
+      "overall_risk_score": 56,
+      "summary": {
+        "critical_reachable": 0,
+        "high_reachable": 1,
+        "medium_reachable": 0,
+        "false_positives_filtered": 0
+      },
+      "results": [
+        {
+          "vulnerability": {
+            "cve_id": "CVE-2023-12345",
+            "package": "axios",
+            "current_version": "^1.6.0",
+            "affected_versions": [
+              "<1.4.0"
+            ],
+            "severity": "HIGH"
+          },
+          "is_reachable": true,
+          "reachability_level": 1,
+          "confidence": 75,
+          "call_chain": {
+            "entry_point": "src/index.ts",
+            "path": [
+              "src/adapters/enrichment/cisa_kev_adapter.ts",
+              "src/adapters/enrichment/epss_adapter.ts",
+              "src/adapters/vulnerability_sources/nvd_api_adapter.ts"
+            ]
+          },
+          "remediation": {
+            "type": "MINOR",
+            "description": "Update axios to a patched version",
+            "required_version": ">=1.0.0",
+            "breaking_changes": false,
+            "action": "npm install axios@latest"
+          },
+          "epss_score": 75.5,
+          "is_exploited_in_wild": true
+        }
+      ]
+    },
+    "timestamp": 1790731650921,
+    "ttl": 86400000
+  }
+]
