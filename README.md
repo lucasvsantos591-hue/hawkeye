@@ -3,754 +3,543 @@
 [![CI Status](https://github.com/lucasvsantos591-hue/hawkeye/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasvsantos591-hue/hawkeye/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node.js 20+](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
+![Ecossistemas](https://img.shields.io/badge/ecossistemas-npm%20%7C%20Python%20%7C%20Maven%20%7C%20Gradle-blue)
 
-> **Análise de vulnerabilidades em dependências com reachability**
->
-> O Hawkeye lista as vulnerabilidades conhecidas das versões **realmente instaladas** no seu projeto
-> e diz quais delas o seu código de fato usa. Assim você prioriza o que importa em vez de corrigir tudo.
+**Análise de vulnerabilidades em dependências, com reachability.**
 
-**Status: beta (v0.2.0).** Em teste com repositórios reais. Veja [Limitações](#-limitações-atuais) antes de confiar no resultado.
+O Hawkeye lê as versões **realmente instaladas** no seu repositório (lockfiles, árvore do Maven/Gradle),
+consulta as vulnerabilidades conhecidas de cada uma e mostra **quais o seu código de fato usa**, com
+arquivo, linha e funções/classes chamadas. Assim o time corrige primeiro o que é alcançável e explorado de
+verdade, em vez de uma lista de centenas de alertas.
 
-## 🚀 Quick Start (rodar no seu repositório)
-
-Requisitos: Node.js 20+ e um projeto JavaScript/TypeScript com `package.json`. Commite o lockfile
-(`package-lock.json`, `yarn.lock` ou `pnpm-lock.yaml`) para ter versões exatas.
-
-```bash
-git clone https://github.com/lucasvsantos591-hue/hawkeye.git && cd hawkeye
-npm ci && npm run build
-
-# Análise (JSON no stdout, progresso no stderr)
-node dist/cli/index.js analyze /caminho/do/seu/repo > resultado.json
-
-# Relatório HTML direto
-node dist/cli/index.js analyze /caminho/do/seu/repo -f html -o relatorio.html
-
-# SARIF para GitHub Code Scanning
-node dist/cli/index.js analyze /caminho/do/seu/repo -f sarif -o hawkeye.sarif
-
-# Falhar o CI se houver finding alcançável HIGH ou maior
-node dist/cli/index.js analyze . --fail-on high > /dev/null
-
-# Incluir devDependencies (por padrão são ignoradas)
-node dist/cli/index.js analyze . --include-dev
-
-# Consultar um pacote específico
-node dist/cli/index.js scan lodash 4.17.20 -f table
-```
-
-O acesso à internet é necessário: as vulnerabilidades vêm do [OSV.dev](https://osv.dev), o EPSS da
-[FIRST](https://www.first.org/epss/) e a lista de exploração ativa do [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog).
-As respostas ficam em cache em `~/.cache/hawkeye` (use `--cache <dir>` ou `--no-cache`).
-
-## 🔍 Como funciona
-
-1. **Inventário:** lê o lockfile (npm v1/v2/v3, yarn classic e berry, pnpm v5/v6/v9) e monta a árvore
-   de dependências com a versão instalada de cada pacote. Isso inclui transitivas e sabe qual dependência direta puxou cada uma.
-2. **Vulnerabilidades:** consulta o OSV.dev (GitHub Advisory Database) para cada `pacote@versão`.
-   O retorno traz severidade, versão corrigida e link do advisory.
-3. **Reachability** (índice de imports via Babel AST de todo o código, exceto `node_modules`, `dist`, `build`...):
-   - **Nível 1:** o pacote é importado no código de produção?
-   - **Nível 2 (padrão):** os bindings importados são realmente usados? Registra quais membros
-     (`_.template`, `express.json`...) e onde (`arquivo:linha`).
-   - Imports só de tipo (`import type`), só em testes ou não usados são marcados como **não alcançáveis**, com o motivo.
-   - Dependência transitiva é alcançável se a dependência direta que a puxa é usada (confiança menor).
-4. **Priorização:** EPSS (probabilidade de exploração em 30 dias) e CISA KEV (exploração ativa confirmada).
-   A ordenação é: alcançável → KEV → severidade → EPSS.
-5. **Remediação:** versão mínima corrigida. Para transitivas, sugere `overrides`.
-
-Cada finding traz `reason` e `evidence` explicando a decisão. Revise os não alcançáveis antes de descartá-los.
-
-## ⚠️ Limitações atuais
-
-- **Só npm (JavaScript/TypeScript).** Python, Java, Go etc. ainda não são suportados.
-- **O Nível 2 não sabe qual função é a vulnerável.** Os advisories do npm raramente trazem essa informação.
-  Ele diz *que* o pacote é usado e *como*; cabe a você cruzar os membros usados com o advisory.
-- **O Nível 3 (data-flow) não existe ainda.** `--level 3` roda o nível 2 com um aviso.
-- **Pacotes carregados indiretamente** (plugins de framework, drivers configurados por string, binários de CLI)
-  aparecem como "declared but never imported" com confiança de 70%. Revise esses casos.
-- **Sem lockfile**, só as dependências diretas são verificadas, na menor versão permitida pelo range.
-- **Workspaces yarn** só com padrões simples (`packages/*`).
-- O rescoring por exposição (`.hawkeye.yaml`) é heurístico; o `expose` faz consultas DNS a terceiros (`dns.google`, `crt.sh`).
-
-## 🌐 API HTTP / Docker
-
-```bash
-docker build -t hawkeye .
-docker run -p 3000:3000 -e HAWKEYE_API_TOKEN=troque-isto \
-  -v /caminho/dos/repos:/workspace:ro hawkeye
-
-curl localhost:3000/api/health
-curl -X POST localhost:3000/api/analyze -H "Authorization: Bearer troque-isto" \
-  -d '{"projectPath": "meu-repo", "format": "json"}'
-```
-
-O servidor não sobe fora de localhost sem `HAWKEYE_API_TOKEN`. Ele só analisa caminhos dentro de
-`HAWKEYE_ALLOWED_ROOT` (no Docker: `/workspace`). Detalhes em [DEPLOYMENT.md](./DEPLOYMENT.md).
-
-### Batch
-
-```bash
-node dist/cli/index.js batch /diretorio/com/varios/projetos --concurrency 2 -o resultados/
-```
+> **Status: beta (v0.3.0).** Validado em repositórios reais (veja [Validação](#-validação)). Leia as
+> [Limitações](#-limitações-conhecidas) antes de usar o resultado para decidir o que *não* corrigir.
 
 ---
 
-## 📜 Design original (V2.1)
+## Sumário
 
-> As seções abaixo descrevem o design e o roadmap originais. Para o que funciona hoje, veja
-> [Como funciona](#-como-funciona) e [Limitações](#-limitações-atuais).
-
-### Características V2.1
-
-### ⭐ NOVO: CVE Enrichment Completo
-
-Hawkeye agora enriquece cada vulnerabilidade com dados do mundo real:
-
-**🔍 CISA KEV (Known Exploited Vulnerabilities)**
-- ✅ Identifica se a vulnerabilidade está sendo explorada na prática
-- ✅ Detecta uso em campanhas ransomware
-- ✅ Integrado na análise de prioridade
-
-**📊 FIRST EPSS (Exploit Prediction Scoring System)**
-- ✅ Score 0-100 da probabilidade de exploração nos próximos 30 dias
-- ✅ Percentil comparativo com outras vulnerabilidades
-- ✅ Dados atualizados continuamente
-
-**🎯 Priority Scoring Inteligente**
-```
-Priority Score = (EPSS × 0.4) + (CISA_KEV × 0.3) + (Reachability × 0.3)
-
-Exemplo:
-  EPSS: 7.8/100 (40%) = 3.12
-  CISA KEV explorado (30%) = 30
-  Reachability 95% confiança (30%) = 28.5
-  ──────────────────────
-  Total: 61.6 → HIGH prioridade
-```
-
-### 🌐 NOVO: Internet-Facing Exposure Detection
-
-Detecta automaticamente se sua aplicação está exposta à internet:
-
-**Métodos de Detecção:**
-- 🔍 **DNS Resolution** - IPs públicos vs privados
-- 🔐 **SSL Certificate** - HTTPS acessível
-- 🌐 **HTTP Probe** - Endpoints respondendo
-- ☁️ **CDN Detection** - Cloudflare, Akamai, AWS
-
-**Saída:**
-```json
-{
-  "is_internet_facing": true,
-  "detection_confidence": 92,
-  "detection_methods": ["DNS", "SSL", "HTTP_PROBE"],
-  "verified_endpoints": [...],
-  "ssl_certificate": {...},
-  "dns_records": {...}
-}
-```
-
-### 🤖 NOVO: AI-Powered Remediation
-
-Suporte integrado para múltiplos provedores de IA:
-
-- **Claude** (Anthropic)
-- **OpenAI** (GPT-4)
-- **Gemini** (Google)
-- **Custom** (OpenAI-compatible)
-
-Gera remediações inteligentes e contextualizadas:
-- Detecta breaking changes
-- Estima esforço realista
-- Sugere ajustes de código específicos
-- Recomenda versões seguras
-
-### 📊 Análise de Alcançabilidade - Três Níveis
-
-1. **Nível 1: Detecção de Importações**
-   - Verifica se o pacote vulnerável é importado
-   - Mais rápido, menos falsos negativos
-
-2. **Nível 2: Análise de Grafo de Chamadas**
-   - Constrói grafo completo de chamadas do seu código
-   - Determina se a função vulnerável é alcançável
-   - Fornece cadeia de chamadas do ponto de entrada até a vulnerabilidade
-
-3. **Nível 3: Análise de Fluxo de Dados & Taint**
-   - Rastreia como dados do usuário fluem pelo seu código
-   - Identifica se dados comprometidos alcançam o ponto vulnerável
-   - Mais preciso, detecta vetores de ataque complexos
-
-### 🌍 Suporte Multi-Linguagem
-
-Hawkeye suporta análise de reachability para múltiplas linguagens:
-
-- **JavaScript/TypeScript** ✅ (via Babel AST)
-- **Python** 🚧 (em desenvolvimento, via módulo AST)
-- **Java, Go, Rust** 🗺️ (roadmap V2+)
-
-### 📦 Múltiplas Fontes de Vulnerabilidades
-
-- **NVD API** (Banco de Dados Nacional de Vulnerabilidades)
-- **Cache SQLite Local** (suporte offline)
-- **API Snyk** (opcional, planejado)
-
-### 🚀 Performance
-
-- Cache agressivo reduz chamadas de API em 95%
-- Análise paralela de múltiplas dependências
-- Grafo de chamadas construído uma vez, reutilizado para todos os CVEs
+- [Por que reachability](#-por-que-reachability)
+- [O que é suportado](#-o-que-é-suportado)
+- [Instalação](#-instalação)
+- [Uso rápido](#-uso-rápido)
+- [Referência da CLI](#-referência-da-cli)
+- [Como funciona](#-como-funciona)
+- [Entendendo o resultado](#-entendendo-o-resultado)
+- [Integração com CI/CD](#-integração-com-cicd)
+- [API HTTP e Docker](#-api-http-e-docker)
+- [Contexto de exposição e remediação com IA](#-contexto-de-exposição-e-remediação-com-ia)
+- [Configuração (variáveis de ambiente)](#-configuração-variáveis-de-ambiente)
+- [Validação](#-validação)
+- [Limitações conhecidas](#-limitações-conhecidas)
+- [Desenvolvimento](#-desenvolvimento)
+- [Roadmap](#-roadmap)
 
 ---
 
-## 🚀 Início Rápido
+## 💡 Por que reachability
 
-### Pré-requisitos
+Scanners de dependência tradicionais (SCA) respondem *"alguma versão vulnerável está instalada?"*. Em projetos
+reais a resposta é quase sempre "sim, dezenas", e a maioria desses alertas envolve pacotes que o código nem
+chama: dependências só de teste, imports só de tipo, bibliotecas puxadas por ferramentas de build.
 
-- Node.js 18+
-- Dart 3.0+ (para o core em background — ainda em desenvolvimento)
-- Python 3.10+ (para parser Python — ainda em desenvolvimento)
+O Hawkeye responde uma pergunta mais útil: **"essa vulnerabilidade está num pacote que o meu código usa?"**
 
-### Instalação
+| | SCA tradicional | Hawkeye |
+|---|---|---|
+| Versão instalada | ✅ | ✅ (lockfile / árvore resolvida) |
+| Import do pacote no código | ❌ | ✅ com arquivo:linha |
+| Quais funções/classes são usadas | ❌ | ✅ (`_.template`, `yaml.load`, `XStream`) |
+| Dependência transitiva → qual direta a puxa | parcial | ✅ e herda a reachability da direta |
+| Import só de tipo / só em teste | ❌ | ✅ filtrado, com o motivo |
+| Exploração ativa (CISA KEV) e probabilidade (EPSS) | às vezes | ✅ |
+| Explica cada decisão | ❌ | ✅ campos `reason` e `evidence` |
+
+Exemplo real (app de teste com `express 4.16.0`, `lodash 4.17.10`, `axios 0.21.0`): **47 vulnerabilidades,
+19 alcançáveis**. As 28 restantes são o axios importado só como tipo, o jsonwebtoken usado só em testes, etc.
+Cada uma vem com o motivo.
+
+---
+
+## 📦 O que é suportado
+
+| Ecossistema | De onde vêm as versões (em ordem de preferência) | Como a reachability é medida |
+|---|---|---|
+| **npm** (JS/TS) | `package-lock.json` (v1–v3), `pnpm-lock.yaml` (v5–v9), `yarn.lock` (classic e berry), `bun.lock`; sem lockfile: `package.json` | AST do Babel: `import`/`require`/`import()`/re-exports, bindings realmente usados, membros acessados, `import type` |
+| **Python** | `uv.lock`, `poetry.lock`, `pdm.lock`, `pylock.toml` (PEP 751), `Pipfile.lock`, `requirements*.txt` (incluindo `-r` e o grafo `# via` do pip-compile); sem lock: `pyproject.toml` | módulo `ast` do próprio Python: aliases, atributos usados, `if TYPE_CHECKING:`, strings em settings (Django `INSTALLED_APPS`), comandos em `Procfile`/`Dockerfile` |
+| **Java / Kotlin – Maven** | `mvn dependency:tree` (ou `./mvnw`); sem Maven: resolvedor próprio que lê `pom.xml` + Maven Central | imports em `.java`/`.kt`, pacotes reais do `.jar` quando ele está em `~/.m2` / cache do Gradle |
+| **Java / Kotlin – Gradle** | `gradle.lockfile`; `./gradlew dependencies`; sem Gradle: `build.gradle(.kts)` + `libs.versions.toml` + BOM do Spring Boot, resolvidos via Maven Central | igual ao Maven |
+
+Um repositório pode ter vários projetos: o Hawkeye encontra todos numa única execução, por exemplo
+`frontend/` (npm), `backend/` (Maven) e `services/worker` (Python). Módulos Maven, subprojetos Gradle e
+workspaces npm/uv não são contados duas vezes.
+
+**Fontes de dados:** [OSV.dev](https://osv.dev), que agrega GitHub Advisory Database, PyPA e outras, para as
+vulnerabilidades; [FIRST EPSS](https://www.first.org/epss/) para a probabilidade de exploração; e
+[CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) para exploração ativa confirmada.
+
+---
+
+## 🔧 Instalação
+
+Requisitos:
+
+- **Node.js 20+** (obrigatório)
+- **Acesso HTTPS** a `api.osv.dev` (obrigatório), `api.first.org` e `www.cisa.gov` (opcionais: sem eles o
+  resultado sai sem EPSS/KEV e com um aviso). Para Java sem Maven/Gradle instalado, também `repo1.maven.org`.
+- **python3** (recomendado para projetos Python; sem ele, os imports são detectados por regex, só nível 1)
+- **Maven ou Gradle** (opcional, para projetos Java): com eles a árvore de dependências é exata; sem eles
+  usa o resolvedor próprio, que bateu 100% com o Maven nos testes (veja [Validação](#-validação))
 
 ```bash
 git clone https://github.com/lucasvsantos591-hue/hawkeye.git
 cd hawkeye
-npm install
+npm ci
 npm run build
+node dist/cli/index.js --help
 ```
+
+Para ter o comando `hawkeye` no PATH: `npm link` dentro da pasta (ou use `node dist/cli/index.js`).
 
 ---
 
-## 📚 Documentação Completa
+## 🚀 Uso rápido
 
-### Guias Disponíveis
+```bash
+# Analisar um repositório inteiro (detecta npm, Python, Maven e Gradle)
+hawkeye analyze /caminho/do/repo > resultado.json
 
-- **[USAGE.md](./USAGE.md)** - Guia prático de instalação e uso
-- **[WORKFLOW.md](./WORKFLOW.md)** - Diagramas visuais do fluxo de análise
-- **[INTELLIGENCE_FLOW.md](./INTELLIGENCE_FLOW.md)** - Como IA é integrada ao pipeline
+# Relatório HTML para abrir no navegador
+hawkeye analyze /caminho/do/repo -f html -o relatorio.html
 
-### Exemplos
+# SARIF para GitHub Code Scanning / IDEs
+hawkeye analyze /caminho/do/repo -f sarif -o hawkeye.sarif
 
-Veja a pasta `examples/` para:
-- Análise completa com exposição à internet
-- Configurações de IA
-- Estrutura de relatórios
+# Só alguns ecossistemas
+hawkeye analyze . --only python
+hawkeye analyze . --only java          # = maven,gradle
+
+# Barrar o CI se houver vulnerabilidade ALCANÇÁVEL de severidade HIGH ou maior (exit code 2)
+hawkeye analyze . --fail-on high > /dev/null
+
+# Consultar um pacote específico, sem analisar código
+hawkeye scan lodash 4.17.20 -f table
+hawkeye scan pyyaml 5.3 -e pypi -f table
+hawkeye scan org.yaml:snakeyaml 1.30 -e maven -f table
+```
+
+O progresso vai para **stderr** e o resultado para **stdout** (ou para o arquivo de `-o`), então
+`hawkeye analyze . > out.json` sempre gera JSON válido.
 
 ---
 
-## 🎯 Fluxo de Análise Completo
+## 📖 Referência da CLI
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  INPUT: Seu Projeto (package.json + código-fonte)          │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  1️⃣ ANALYZE - Detecção de Vulnerabilidades                 │
-│                                                              │
-│  ✓ Lê package.json (dependências)                          │
-│  ✓ AST Parsing (código-fonte)                              │
-│  ✓ Taint Analysis (rastreamento de dados)                  │
-│  ✓ Reachability (alcançabilidade)                          │
-│                                                              │
-│  OUTPUT: findings.json                                      │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  2️⃣ EXPOSE - Detecção de Exposição à Internet (OPCIONAL)   │
-│                                                              │
-│  ✓ DNS Resolution (IPs públicos/privados)                  │
-│  ✓ SSL Check (certificado HTTPS)                           │
-│  ✓ HTTP Probe (endpoints respondendo)                      │
-│  ✓ CDN Detection (Cloudflare, Akamai, etc)                 │
-│                                                              │
-│  OUTPUT: exposure.json                                      │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3️⃣ REPORT - Enriquecimento + Relatório                    │
-│                                                              │
-│  ✓ CISA KEV (vulnerabilidades exploradas)                 │
-│  ✓ FIRST EPSS (probabilidade de exploração)               │
-│  ✓ Priority Scoring (fórmula inteligente)                 │
-│  ✓ Internet-Facing Context (se análise de exposição)      │
-│                                                              │
-│  OUTPUT: findings com enrichment                            │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  4️⃣ AI REMEDIATION (OPCIONAL - Claude/OpenAI/Gemini)      │
-│                                                              │
-│  ✓ Análise inteligente de cada CVE                        │
-│  ✓ Detecção de breaking changes                           │
-│  ✓ Estimativa de esforço                                  │
-│  ✓ Sugestões de código                                    │
-│                                                              │
-│  OUTPUT: Remediações AI-powered                            │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  5️⃣ RESULTADO FINAL - HTML/DOCX/JSON                       │
-│                                                              │
-│  Cada CVE mostra:                                          │
-│  ├─ Cadeia de exploração (entry point + call chain)       │
-│  ├─ Por que é explorável (contexto técnico)               │
-│  ├─ Priority Score + EPSS + CISA KEV                      │
-│  ├─ Internet-facing status (se aplicável)                 │
-│  └─ Remediações (versão, código, esforço)                 │
-│                                                              │
-│  PRONTO PARA: Compartilhar, CI/CD, Integração             │
-└─────────────────────────────────────────────────────────────┘
-```
+### `hawkeye analyze <path>`
+
+Analisa um repositório ou projeto.
+
+| Opção | Padrão | Descrição |
+|---|---|---|
+| `-f, --format` | `json` | `json`, `html` ou `sarif` |
+| `-o, --output` | stdout | Arquivo de saída |
+| `--level` | `2` | `1` = pacote importado; `2` = bindings importados são usados; `3` = ainda não implementado (roda o 2 com aviso) |
+| `--only` | todos | `npm,python,maven,gradle` ou `java` |
+| `--include-dev` | `false` | Inclui devDependencies / grupos dev / escopo `test` |
+| `--no-build-tool` | – | Não executa `mvn`/`gradle` (lê só os arquivos de build) |
+| `--fail-on` | – | `low`, `medium`, `high`, `critical`: exit code 2 se existir finding alcançável nessa severidade ou acima |
+| `--cache <dir>` / `--no-cache` | `~/.cache/hawkeye` | Cache das respostas do OSV/EPSS/KEV/Maven Central |
+
+Exit codes: `0` ok, `1` erro, `2` limite do `--fail-on` atingido.
+
+> ⚠️ Rodar `mvn`/`gradle` executa os scripts de build do projeto analisado. Em repositórios de terceiros ou não
+> confiáveis, use `--no-build-tool`.
+
+### `hawkeye scan <package> <version>`
+
+Lista as vulnerabilidades conhecidas de uma versão, sem reachability. `-e/--ecosystem npm|pypi|maven` (padrão
+`npm`) e `-f json|table`. No Maven o nome é `groupId:artifactId`.
+
+### `hawkeye report <input.json>`
+
+Gera relatórios a partir de um JSON do `analyze`.
+
+| Opção | Descrição |
+|---|---|
+| `-f, --format` | `html` (padrão), `markdown`, `json`, `docx`, `sarif` |
+| `-o, --output` | Arquivo de saída (obrigatório para `docx`) |
+| `--enrichment` | Reconsulta EPSS/KEV (útil para JSONs antigos) |
+| `--ai-provider` | `claude`, `openai`, `gemini`, `custom` ou `none` (padrão), para sugestões de remediação por IA |
+| `--ai-token`, `--ai-model`, `--ai-base-url` | Credencial, modelo e endpoint (`custom` = qualquer API compatível com OpenAI) |
+
+### `hawkeye batch <diretório>`
+
+Analisa cada subdiretório que contenha um projeto suportado. `--concurrency` (padrão 2), `--level`,
+`--include-dev`, `-o <dir>` grava um JSON por projeto. O resumo vai para stderr e o JSON consolidado para stdout.
+
+### `hawkeye expose <hostname>`
+
+Heurística de exposição à internet (DNS, certificado TLS, HTTP) que gera um contexto para o rescoring. Consulta
+serviços de terceiros (`dns.google`, `crt.sh`), por isso não use com hostnames sensíveis.
+
+### Servidor HTTP
+
+`node dist/cli/server.js`, veja [API HTTP e Docker](#-api-http-e-docker).
 
 ---
 
-### Uso Básico: Workflow V2.1 (Três Passos)
+## ⚙️ Como funciona
 
-Hawkeye agora integra análise de reachability + exposição à internet + enrichment CVE:
-
-**1️⃣ Análise de Vulnerabilidades (determinística)**
-```bash
-# Detecta vulnerabilidades e determina reachability
-node ./dist/cli/index.js analyze ./meu-app --level 2 --output findings.json
+```
+ repositório
+     │
+     ├─ 1. Descoberta ─────────── package.json / *.lock / requirements*.txt / pyproject.toml / pom.xml / build.gradle
+     │                            (até 4 níveis; ignora node_modules, target, build, venv, tests, examples…)
+     │
+     ├─ 2. Inventário ────────── versão instalada de cada pacote, direto × transitivo,
+     │                            quais dependências diretas puxam cada transitiva, prod × dev
+     │
+     ├─ 3. Vulnerabilidades ──── OSV.dev querybatch por (ecossistema, nome, versão)
+     │                            → advisories (duplicatas GHSA/PYSEC/CVE unificadas por alias),
+     │                              severidade, faixas afetadas, versão corrigida
+     │
+     ├─ 4. Reachability ──────── índice de uso do código, construído só para projetos com pacotes vulneráveis
+     │
+     ├─ 5. Enriquecimento ────── EPSS (probabilidade de exploração em 30 dias) + CISA KEV
+     │
+     └─ 6. Priorização ───────── alcançável → KEV → severidade → confiança → EPSS
 ```
 
-**2️⃣ Exposição à Internet (NOVO - Opcional)**
-```bash
-# Verifica se a aplicação está internet-facing
-node ./dist/cli/index.js expose meu-dominio.com --output exposure.json
-```
+### Regras de reachability
 
-**3️⃣ Relatório Enriquecido**
-```bash
-# SEM IA (rápido) - CISA KEV + FIRST EPSS + Priority Score
-node ./dist/cli/index.js report findings.json \
-  --enrichment \
-  --format html \
-  --output relatorio.html
+**npm e Python:**
 
-# COM IA (inteligente) - Remediações AI-powered
-node ./dist/cli/index.js report findings.json \
-  --enrichment \
-  --ai-provider claude \
-  --ai-token sk-... \
-  --format html \
-  --output relatorio-inteligente.html
-```
+| Situação | Resultado | Confiança |
+|---|---|---|
+| Importado e usado em código de produção | **alcançável** (nível 2), com membros e `arquivo:linha` | 80 |
+| Não usado diretamente, mas outra dependência usada depende dele | **alcançável**, herdado | ≤ 60 |
+| Transitiva de uma dependência direta que é usada | **alcançável** | ≤ 60 |
+| Python: servidor/driver iniciado por comando (`Procfile`, `Dockerfile`, `*.sh`) ou carregado sem import (gunicorn, uvicorn, psycopg2, python-multipart…) | **alcançável** | 50 |
+| Não dá para saber se é direta ou transitiva (ex.: `pip freeze`) e não é importada | **alcançável** (conservador) | 30 |
+| Importado mas nenhum nome importado é usado | não alcançável | 70 |
+| Declarado e nunca importado | não alcançável | 60–70 |
+| Só importado em testes | não alcançável | 80 |
+| Só `import type` (TS) / só em `if TYPE_CHECKING:` (Python) | não alcançável | 90 |
+| Transitiva puxada só por dependências que não são usadas | não alcançável | 60 |
 
-**Suporte a Múltiplos Provedores de IA:**
-```bash
-# OpenAI (GPT-4)
-node ./dist/cli/index.js report findings.json \
-  --ai-provider openai \
-  --ai-token sk-... \
-  --format html
+**Java (Maven/Gradle):** bibliotecas Java são muito carregadas sem import (backends de log como log4j-core,
+drivers JDBC, auto-configuração do Spring). Por isso, **nenhuma dependência de produção é marcada como não
+alcançável** só por falta de import:
 
-# Google Gemini
-node ./dist/cli/index.js report findings.json \
-  --ai-provider gemini \
-  --ai-token ... \
-  --format html
-```
+| Situação | Resultado | Confiança |
+|---|---|---|
+| Importada no código (classes listadas) | **alcançável** | 80 |
+| Transitiva de uma dependência usada | **alcançável** | 60 |
+| Sem imports | **alcançável** (carregamento em runtime) | 40 |
+| Escopo `test` (só com `--include-dev`) | não alcançável | 90 |
 
-**Múltiplos Formatos de Saída:**
-```bash
-# HTML - Interativo, para visualização
---format html --output relatorio.html
+No Java, a reachability serve para **priorizar** (confiança e evidência), não para descartar.
 
-# DOCX - Profissional, para compartilhamento
---format docx --output relatorio.docx
+### Remediação sugerida
 
-# Markdown - Para documentação/Git
---format markdown --output relatorio.md
+| Projeto | Dependência direta | Transitiva |
+|---|---|---|
+| npm | `npm install pkg@^X` | `npm pkg set overrides.pkg=^X` |
+| Python | `uv add` / `poetry add` / `pdm add` / `pipenv install` / editar `requirements.txt` | constraint (`constraint-dependencies`, arquivo de constraints) |
+| Maven | `mvn versions:use-dep-version …` | fixar em `<dependencyManagement>` |
+| Gradle | trocar a versão no build/catálogo | `dependencies { constraints { … } }` |
 
-# JSON - Para integração com ferramentas
---format json --output relatorio.json
-```
+`type` vem como `MAJOR` quando a correção exige subir a versão major (provável breaking change). Pacotes
+maliciosos (advisories `MAL-*`) viram CRITICAL com instrução de remoção.
 
-# Com endpoint customizado OpenAI-compatible (Ollama, Groq, Mistral, etc.)
-vra report analysis.json --format html --ai-provider custom --ai-base-url http://localhost:8000/v1 --ai-token test-key
+### Score de risco
 
-# Formato Markdown ou JSON
-vra report analysis.json --format markdown
-vra report analysis.json --format json | jq '.results[] | select(.is_reachable == true)'
-```
-
-### Verificar um CVE Específico (Em desenvolvimento)
-```bash
-vra scan axios 1.4.0 --language javascript
-```
+`overall_risk_score` (0–100) é o pior finding alcançável: base por severidade (CRITICAL 90, HIGH 70,
+MEDIUM 45, LOW 20), +10 se estiver no CISA KEV e até +10 pelo EPSS.
 
 ---
 
-## 📊 Saída de Exemplo
+## 📊 Entendendo o resultado
+
+Trecho real de `hawkeye analyze` (JSON):
 
 ```json
 {
-  "project_name": "meu-app",
-  "total_vulnerabilities": 15,
-  "reachable_vulnerabilities": 3,
-  "overall_risk_score": 42,
-  "summary": {
-    "critical_reachable": 1,
-    "high_reachable": 2,
-    "medium_reachable": 0,
-    "false_positives_filtered": 12
+  "vulnerability": {
+    "cve_id": "CVE-2021-23337",
+    "advisory_id": "GHSA-35jh-r3h4-6jhm",
+    "summary": "Command Injection in lodash",
+    "advisory_url": "https://github.com/advisories/GHSA-35jh-r3h4-6jhm",
+    "ecosystem": "npm",
+    "project": ".",
+    "manifest": "package-lock.json",
+    "package": "lodash",
+    "current_version": "4.17.10",
+    "affected_versions": ["<4.17.21"],
+    "fixed_version": "4.17.21",
+    "severity": "HIGH",
+    "dependency_type": "direct",
+    "introduced_via": [],
+    "is_dev": false,
+    "epss_score": 21.33,
+    "epss_percentile": 97.53,
+    "is_exploited_in_wild": false
   },
-  "results": [
-    {
-      "vulnerability": {
-        "cve_id": "CVE-2023-12345",
-        "package": "express",
-        "current_version": "4.16.0",
-        "affected_versions": ["<4.17.1"],
-        "severity": "HIGH",
-        "epss_score": 8.2,
-        "is_exploited_in_wild": true
-      },
-      "is_reachable": true,
-      "reachability_level": 2,
-      "confidence": 92,
-      "call_chain": {
-        "entry_point": "src/index.js:main",
-        "path": [
-          "setupRoutes() → src/routes.js:12",
-          "handleRequest() → src/handlers/api.js:45",
-          "express.use(bodyParser.json()) → triggers vulnerable code",
-          "vulnerableFunction()"
-        ]
-      },
-      "remediation": {
-        "type": "MINOR",
-        "description": "Apenas atualizar versão do npm",
-        "required_version": ">=4.17.1",
-        "breaking_changes": false,
-        "changes_needed": [
-          "Atualizar express@4.16.0 para express@^4.17.1 em package.json",
-          "Executar 'npm install' (compatível com versão atual do seu código)"
-        ],
-        "action": "npm install express@4.17.1"
-      }
-    },
-    {
-      "vulnerability": {
-        "cve_id": "CVE-2023-54321",
-        "package": "lodash-cli",
-        "current_version": "4.15.0",
-        "affected_versions": ["<3.10.2"],
-        "severity": "CRITICAL",
-        "epss_score": 9.8,
-        "is_exploited_in_wild": true
-      },
-      "is_reachable": true,
-      "reachability_level": 3,
-      "confidence": 87,
-      "call_chain": {
-        "entry_point": "src/index.js:main",
-        "taint_analysis": "User input (req.body) → map() → vulnerable function",
-        "path": [
-          "handleUserData() → src/handlers/data.js:112",
-          "_.map(userData, transform) → lodash@4.15.0",
-          "Vulnerability: Prototype pollution em _.map()"
-        ]
-      },
-      "remediation": {
-        "type": "MAJOR",
-        "description": "Atualizar para versão incompatível com breaking changes",
-        "required_version": ">=5.0.0",
-        "breaking_changes": true,
-        "changes_needed": [
-          "Lodash 5.x removeu métodos legados - revisar seu código",
-          "Métodos afetados: _.assign(), _.extend() (use Object.assign)",
-          "Atualizar src/handlers/data.js:112 - substituir _.map por Array.prototype.map ou lodash@5.x API",
-          "Adicionar testes para validar nova implementação",
-          "Estimar: 2-4 horas de work (modificações em ~5 arquivos)"
-        ],
-        "action": "Planejado para release v2.1.0 (breaking change)",
-        "effort_estimate": "2-4 horas"
-      }
-    },
-    {
-      "vulnerability": {
-        "cve_id": "CVE-2023-99999",
-        "package": "uuid",
-        "current_version": "8.0.0",
-        "affected_versions": ["<8.3.2"],
-        "severity": "MEDIUM",
-        "epss_score": 5.1,
-        "is_exploited_in_wild": false
-      },
-      "is_reachable": false,
-      "reachability_level": 1,
-      "confidence": 100,
-      "reason": "Pacote uuid importado mas função vulnerável (random seeding) não é utilizada no código",
-      "remediation": {
-        "type": "OPTIONAL",
-        "description": "Nenhuma ação necessária no momento",
-        "notes": "Código usa apenas uuid.v4() com default crypto.randomUUID(). Vulnerabilidade afeta apenas custom seeds.",
-        "action": "Monitorar para futura atualização (sem pressa)"
-      }
-    }
-  ]
+  "is_reachable": true,
+  "reachability_level": 2,
+  "confidence": 80,
+  "reason": "Used in 1 file(s). Uses: map, template.",
+  "evidence": {
+    "files": ["src/index.js"],
+    "members": ["map", "template"],
+    "sites": ["src/index.js:16", "src/index.js:27"]
+  },
+  "remediation": {
+    "type": "MINOR",
+    "description": "Upgrade lodash from 4.17.10 to 4.17.21 or later.",
+    "action": "npm install lodash@^4.17.21"
+  }
 }
 ```
 
-### 🎯 Como Interpretar o Relatório
+Campos principais:
 
 | Campo | Significado |
-|-------|-----------|
-| **is_reachable** | Vulnerabilidade pode ser explorada no seu código? |
-| **reachability_level** | 1=importado, 2=função alcançável, 3=taint-reachável |
-| **confidence** | Quanto VRA tem certeza da análise (80-100% = confiável) |
-| **type (MINOR/MAJOR)** | Apenas versão (MINOR) ou mudanças de código (MAJOR) |
-| **effort_estimate** | Tempo estimado para correção |
+|---|---|
+| `is_reachable`, `confidence` | Decisão e o quanto confiar nela (veja as tabelas acima) |
+| `reason` | Por que a decisão foi tomada, em texto |
+| `evidence.sites` / `members` | Onde e o que o código usa do pacote |
+| `dependency_type`, `introduced_via` | Direta ou transitiva e quais dependências diretas a puxam |
+| `epss_score` | Probabilidade (%) de exploração nos próximos 30 dias; `epss_percentile` compara com todos os CVEs |
+| `is_exploited_in_wild` | Está no catálogo CISA KEV (exploração ativa confirmada) |
+| `project`, `manifest` | Subprojeto e arquivo de onde a versão foi lida |
+| `scan.projects`, `scan.warnings` | O que foi analisado e **tudo que pode ter reduzido a precisão** (lockfile ausente, falha do Maven, arquivos não parseados, EPSS fora do ar…) |
+
+Resumo do topo: `total_vulnerabilities`, `reachable_vulnerabilities`, `summary.critical_reachable`… e
+`summary.false_positives_filtered` (vulnerabilidades presentes, mas avaliadas como não alcançáveis).
+
+**Como revisar:** comece pelos alcançáveis com KEV ou severidade alta. Nos "não alcançáveis", leia o
+`reason`: *"declared but never imported"* pode ser um plugin carregado por configuração.
+
+**HTML:** um card por finding, com severidade, versão corrigida, EPSS, KEV, tags (ecossistema, subprojeto,
+direta/transitiva), onde é usado e a remediação. Todo texto é escapado e a página tem CSP restritiva.
+
+**SARIF 2.1.0:** cada resultado aponta para o primeiro `arquivo:linha` onde o pacote é usado (ou para o
+lockfile/manifest), com `security-severity` para o GitHub Code Scanning.
 
 ---
 
-## 🏗️ Arquitetura
+## 🔁 Integração com CI/CD
 
-### Divisão de Responsabilidades (Opção 3 - Híbrida)
+### GitHub Actions (SARIF + gate)
+
+```yaml
+name: Hawkeye
+on: [push, pull_request]
+
+jobs:
+  hawkeye:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Opcional para Java: actions/setup-java para usar mvn/gradle (árvore exata)
+      - name: Build Hawkeye
+        run: |
+          git clone --depth 1 https://github.com/lucasvsantos591-hue/hawkeye.git /tmp/hawkeye
+          cd /tmp/hawkeye && npm ci && npm run build
+      - name: Analyze
+        run: node /tmp/hawkeye/dist/cli/index.js analyze . -f sarif -o hawkeye.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: hawkeye.sarif
+      - name: Gate on reachable HIGH+
+        run: node /tmp/hawkeye/dist/cli/index.js analyze . --fail-on high > /dev/null
+```
+
+Os exemplos de GitLab CI e Azure Pipelines estão no [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+---
+
+## 🌐 API HTTP e Docker
+
+```bash
+docker build -t hawkeye .
+docker run -p 3000:3000 \
+  -e HAWKEYE_API_TOKEN=troque-isto \
+  -v /srv/repos:/workspace:ro \
+  hawkeye
+
+curl localhost:3000/api/health
+curl -X POST localhost:3000/api/analyze \
+  -H "Authorization: Bearer troque-isto" \
+  -d '{"projectPath": "meu-repo", "format": "json", "includeDev": false}'
+```
+
+| Endpoint | Descrição |
+|---|---|
+| `GET /api/health` | Status, versão, uptime, análises em andamento (sem autenticação) |
+| `POST /api/analyze` | `{ projectPath, level?, format?: "json"\|"html"\|"sarif", includeDev? }` |
+| `POST /api/report` | `{ analysisResult, format?: "html"\|"sarif"\|"json", projectPath? }` |
+
+Segurança:
+
+- Exige `HAWKEYE_API_TOKEN` (Bearer) para escutar fora de localhost; sem token o servidor se recusa a subir.
+- `projectPath` é resolvido dentro de `HAWKEYE_ALLOWED_ROOT`, com symlinks resolvidos; qualquer caminho fora dele recebe 403.
+- Corpo limitado a 5 MB; no máximo `HAWKEYE_MAX_CONCURRENCY` análises simultâneas (429 acima disso); CORS só se `HAWKEYE_CORS_ORIGIN` for definido.
+- A API **não executa mvn/gradle** (isso rodaria scripts do projeto) a menos que `HAWKEYE_ALLOW_BUILD_TOOLS=1`.
+- A imagem roda como usuário `node`, inclui `python3` e não tem TLS: coloque um proxy reverso na frente.
+
+Mais detalhes em [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+---
+
+## 🧭 Contexto de exposição e remediação com IA
+
+**Contexto (`.hawkeye.yaml` / `.hawkeye.json` na raiz do projeto):** informa a exposição da aplicação. O
+relatório HTML ajusta o score (×1.5 `internet-facing`, ×0.8 `internal-only`, ×0.4 `isolated`) e mostra o motivo.
+
+```yaml
+application_name: payments-api
+environment: production
+exposure: internet-facing   # internet-facing | internal-only | isolated | unknown
+compliance:
+  pci_dss: true
+custom_tags:
+  team: payments
+```
+
+Exemplos em [`examples/`](./examples). O rescoring é heurístico e **não altera** `is_reachable`.
+
+**IA (opcional):** `hawkeye report resultado.json --ai-provider claude` gera sugestões de remediação por
+finding. Tokens: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` ou `--ai-token`; o modelo pode ser
+trocado com `--ai-model`. No relatório as sugestões aparecem marcadas como geradas por IA: **revise antes de
+executar qualquer comando**.
+
+---
+
+## 🔩 Configuração (variáveis de ambiente)
+
+| Variável | Padrão | Uso |
+|---|---|---|
+| `HAWKEYE_CACHE_DIR` | `~/.cache/hawkeye` | Cache de advisories, EPSS, KEV e POMs |
+| `HAWKEYE_OSV_URL` | `https://api.osv.dev/v1` | Espelho do OSV |
+| `HAWKEYE_EPSS_URL` | `https://api.first.org/data/v1/epss` | Espelho do EPSS |
+| `HAWKEYE_KEV_URL` | feed oficial da CISA | Espelho do KEV |
+| `HAWKEYE_MAVEN_REPO` | `https://repo1.maven.org/maven2` | Repositório Maven (ex.: Nexus/Artifactory interno) |
+| `HAWKEYE_API_TOKEN` | – | Token da API |
+| `HAWKEYE_HOST` / `HAWKEYE_PORT` | `127.0.0.1` / `3000` | Endereço da API (`0.0.0.0` no Docker) |
+| `HAWKEYE_ALLOWED_ROOT` | diretório atual (`/workspace` no Docker) | Raiz permitida para a API |
+| `HAWKEYE_MAX_CONCURRENCY` | `2` | Análises simultâneas na API |
+| `HAWKEYE_CORS_ORIGIN` | – | Origem permitida para browsers |
+| `HAWKEYE_ALLOW_BUILD_TOOLS` | – | `1` permite a API rodar mvn/gradle |
+
+TTLs do cache: consultas ao OSV 6 h, advisories 7 dias, EPSS/KEV 24 h, POMs 30 dias.
+
+---
+
+## ✅ Validação
+
+Testado em 2026-09-29 contra projetos reais:
+
+| Projeto | Ecossistema | Verificação | Resultado |
+|---|---|---|---|
+| App de exemplo (express/lodash/axios) | npm | pacotes vulneráveis × `npm audit` | idênticos; mesmo resultado com lock npm, pnpm, yarn v1 e yarn berry |
+| nestjs/nest (2.047 arquivos) | npm | desempenho | 5 s |
+| excalidraw (monorepo yarn) | npm | desempenho, workspaces | 8 s |
+| fastapi/full-stack-fastapi-template | Python (uv workspace) + npm (bun) | multi-projeto | backend e frontend detectados, sem duplicar |
+| saleor (2.861 arquivos) | Python (uv.lock, Django) | desempenho | 9 s |
+| python-poetry/poetry, pypa/pipenv, pypi/warehouse | poetry.lock, Pipfile.lock, pylock.toml, pip-compile | parsing | todos lidos |
+| spring-projects/spring-petclinic | Maven | resolvedor × `mvn dependency:tree` | **106/106 pacotes idênticos** |
+| WebGoat | Maven | resolvedor × `mvn dependency:tree` | **191/191 pacotes idênticos**; xstream 1.4.5 detectado e usado |
+| spring-petclinic (build.gradle) | Gradle | resolvedor × `gradlew dependencies` | todas as bibliotecas de runtime idênticas |
+
+Mais de 90 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
+
+---
+
+## ⚠️ Limitações conhecidas
+
+- **Não identifica a função vulnerável.** Os advisories raramente dizem qual função está afetada. O
+  Hawkeye mostra *que* o pacote é usado e *o que* é usado dele; cruzar com o advisory é trabalho humano.
+- **Nível 3 (data-flow/taint) não existe.** `--level 3` roda o nível 2.
+- **Carregamento indireto** (plugins configurados por string, entry points, reflexão) pode aparecer como
+  "declared but never imported" em npm/Python. No Java isso é tratado como alcançável de propósito.
+- **Transitivas herdam a reachability da dependência direta**: não se verifica se o caminho vulnerável *dentro*
+  da biblioteca é exercitado.
+- **Sem lockfile / `pip freeze`:** precisão menor (ver `scan.warnings`). Commite o lockfile.
+- **Resolvedor Java sem Maven/Gradle:** não aplica profiles, plugins que mudam dependências, version ranges
+  nem repositórios privados, exceto via `HAWKEYE_MAVEN_REPO`. Com `mvn`/`gradle` disponível, a árvore é exata.
+- **Gradle:** só a configuração `runtimeClasspath` (e `testRuntimeClasspath` com `--include-dev`); os plugins
+  Android/KMP não foram testados.
+- **Ecossistemas não suportados:** Go, Rust, Ruby, PHP, .NET, containers/SO.
+- **Requer rede** para OSV (não há modo offline).
+
+---
+
+## 🛠️ Desenvolvimento
+
+```bash
+npm ci
+npm run build        # tsc → dist/
+npm test             # vitest (offline)
+npx tsc --noEmit     # typecheck
+```
+
+Estrutura:
 
 ```
-Fluxo VRA:
-
-1. ANÁLISE (Determinística)
-   └─ vra analyze [projeto]
-      ├─ Parse (Babel AST para JS, stdlib AST para Python)
-      ├─ Call Graph (reachability levels 1/2/3)
-      ├─ CVE Matching (NVD API ou cache local)
-      └─ Output: analysis.json (estruturado, reprodutível)
-
-2. RELATÓRIO (AI-Agnostico, Opcional)
-   └─ vra report analysis.json --ai-provider [claude|openai|gemini|custom|none]
-      ├─ Lê analysis.json
-      ├─ [Opcionalmente] Chama IA para remediação:
-      │  └─ Prompt: "Para cada CVE, sugira tipo (MAJOR/MINOR/OPTIONAL) e ações"
-      │  └─ Resposta: JSON com sugestões detalhadas
-      ├─ Mescla sugestões em analysis.json
-      └─ Output: relatório HTML/Markdown/JSON
-
-Estrutura de Código:
-
 src/
-├── types/
-│   └── analysis-result.ts         # Schema compartilhado
-├── adapters/
-│   └── ai_providers/              # Abstração agnóstica de IA
-│       ├── ai_provider.interface  # Contrato
-│       ├── prompts.ts             # Prompt shared + parsing
-│       ├── claude_provider.ts     # Implementação Anthropic
-│       ├── openai_provider.ts     # Implementação OpenAI (+ custom)
-│       ├── gemini_provider.ts     # Implementação Google
-│       └── provider_factory.ts    # Factory com resolução de env vars
 ├── cli/
-│   ├── commands/
-│   │   ├── analyze.ts             # Análise (hoje mockado)
-│   │   └── report.ts              # Renderização de relatório
-│   └── report/
-│       ├── render-html.ts         # Renderer HTML
-│       └── render-markdown.ts     # Renderer Markdown
-├── core/                          # Dart core (WIP)
-└── adapters/vulnerability_sources # Parsers (WIP)
+│   ├── index.ts                  # yargs: analyze, scan, report, batch, expose
+│   ├── server.ts                 # API HTTP
+│   └── commands/                 # um arquivo por comando
+├── core/
+│   ├── analysis_engine.ts        # orquestra: descoberta → inventário → OSV → reachability → EPSS/KEV
+│   ├── project_discovery.ts      # encontra projetos npm/Python/Maven/Gradle no repositório
+│   ├── dependency_inventory.ts   # lockfiles npm (npm, pnpm, yarn, bun)
+│   ├── ecosystems/
+│   │   ├── python_inventory.ts   # uv/poetry/pdm/pylock/Pipfile/requirements/pyproject
+│   │   ├── java_inventory.ts     # mvn/gradle tree, lockfiles, build.gradle, catálogo de versões
+│   │   └── maven_resolver.ts     # resolvedor de POM (parent, BOM, nearest-wins, exclusões)
+│   ├── import_index.ts           # uso em JS/TS (Babel)
+│   ├── python_index.ts           # uso em Python (ast via python3)
+│   ├── java_index.ts             # uso em Java/Kotlin (imports + conteúdo do jar)
+│   ├── threat_intel.ts           # EPSS + CISA KEV
+│   ├── versions.ts               # comparação de versões semver/PEP 440/Maven
+│   ├── inventory_types.ts, cache_manager.ts, http.ts, batch_processor.ts, risk_rescorer.ts
+├── adapters/
+│   ├── vulnerability_sources/osv_source.ts
+│   ├── report/                   # html, sarif, docx
+│   ├── ai_providers/             # claude, openai, gemini, custom
+│   ├── context/                  # .hawkeye.yaml, K8s, Terraform (experimental)
+│   └── exposure-detection/       # comando expose
+└── types/analysis-result.ts      # schema do resultado
+tests/unit/                        # testes offline; fixtures em tests/fixtures
 ```
 
-### Fluxo de Dados
+As pastas `core/` (Dart) e `src/adapters/parsers/python_parser` são protótipos antigos e não participam da
+análise atual.
 
-```
-projeto-local/                                 (usuário)
-  ↓
-vra analyze ./projeto --level 2 --output a.json
-  ├─ Parse (JS/Python) → Call Graph
-  ├─ Fetch CVEs (NVD)
-  ├─ Check Reachability (alcançável?)
-  ↓
-a.json (determinístico, sempre igual)
-  │
-  ├─ Cenário 1: Sem IA
-  │  ├─ vra report a.json --ai-provider none
-  │  └─ Output: relatório com remediações do a.json
-  │
-  └─ Cenário 2: Com IA do usuário
-     ├─ vra report a.json --ai-provider claude --ai-token $KEY
-     ├─ Send a.json findings → LLM (Claude, GPT, Gemini, etc.)
-     ├─ LLM retorna: sugestões de remediação em JSON
-     ├─ Merge: sugestões sobrescrevem remediation em a.json
-     └─ Output: relatório enriquecido com IA
-```
-
-### Por que Agnóstico?
-
-Empresas usam diferentes LLMs por motivos legítimos:
-- **Custo:** OpenAI GPT pode ser caro; Gemini ou custom (Ollama) é barato
-- **Compliance:** Dados não podem sair da rede; usa self-hosted (Ollama)
-- **Já paga:** Empresa tem contrato com Claude; usa esse
-- **Qualidade:** Diferentes LLMs são melhores em diferentes tarefas
-
-VRA oferece **um** workflow — o usuário escolhe a IA. Sem lock-in.
+Contribuições: veja [CONTRIBUTING.md](./CONTRIBUTING.md). Para reportar vulnerabilidades no próprio Hawkeye:
+[SECURITY.md](./SECURITY.md).
 
 ---
 
-## 📚 Documentação
+## 🗺️ Roadmap
 
-- [Guia de Arquitetura](./VULNERABILITY_ANALYZER_ARCHITECTURE.md)
-- [Referência de API](./docs/API.md)
-- [Diretrizes de Contribuição](./packages/sambura_core/CONTRIBUTING.md)
-- [Configuração](./docs/CONFIG.md)
-
----
-
-## 🧪 Testes
-
-```bash
-# Executar todos os testes
-npm test
-
-# Executar suite específica
-npm test -- provider_factory
-npm test -- report
-
-# Modo watch
-npm test -- --watch
-
-# Testes E2E (infraestrutura ainda em desenvolvimento)
-npm run test:e2e
-```
-
-### Teste Manual: Gerar Relatório de Exemplo
-
-```bash
-# Sem IA (rápido, offline)
-npm run build
-node dist/cli/index.js report tests/fixtures/analysis-results/sample-basic.json \
-  --format html --ai-provider none --output /tmp/report.html
-
-# Visualizar
-open /tmp/report.html  # macOS
-xdg-open /tmp/report.html  # Linux
-```
-
----
-
-## 📦 Pacotes
-
-### NPM
-```bash
-npm install vra-cli
-```
-
-### Pub.dev (Dart)
-```bash
-dart pub add vulnerability_reachability_analyzer
-```
-
-### PyPI (Python)
-```bash
-pip install vra-python-parsers
-```
-
----
-
-## 🔧 Configuração
-
-### Variáveis de Ambiente (para AI)
-
-```bash
-# Claude (Anthropic)
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# OpenAI
-export OPENAI_API_KEY="sk-..."
-
-# Gemini (Google)
-export GEMINI_API_KEY="AIzaSy..."
-# ou
-export GOOGLE_API_KEY="AIzaSy..."
-```
-
-### Arquivo de Configuração `.vrarc` (Em desenvolvimento)
-
-```json
-{
-  "language": "javascript",
-  "reachability_level": 2,
-  "cve_sources": ["nvd", "local"],
-  "cache_dir": "./.vra-cache",
-  "exclude_packages": ["@types/*"],
-  "entry_points": ["src/index.ts"]
-}
-```
-
-### Opções de Linha de Comando
-
-```bash
-# Análise
-vra analyze [path] --level 1|2|3 --language js|python|java|go|rust --output results.json
-
-# Relatório com IA
-vra report analysis.json \
-  --format html|markdown|json \
-  --ai-provider claude|openai|gemini|custom|none \
-  --ai-token [API_KEY] \
-  --ai-base-url [para custom endpoints] \
-  --ai-model [opcional, override model padrão] \
-  --output relatorio.html
-```
-
----
-
-## 🔌 Integração com Samburá (Planejado V2)
-
-Hawkeye planejado para integrar com Samburá para forçar políticas de segurança:
-
-```dart
-// Na configuração do gateway Samburá (V2)
-import 'package:hawkeye_core/hawkeye_core.dart';
-
-final analyzer = ReachabilityAnalyzer();
-final result = await analyzer.analyze(projectPath);
-
-// Bloquear deployments com vulnerabilidades críticas alcançáveis
-if (result.getCriticalReachable().isNotEmpty) {
-  throw PolicyViolationException('Vulnerabilidades críticas detectadas');
-}
-```
-
----
-
-## 🤝 Contribuindo
-
-Contribuições bem-vindas! Por favor, consulte [CONTRIBUTING.md](./packages/sambura_core/CONTRIBUTING.md)
-
-1. Faça um fork do repositório
-2. Crie uma branch de feature (`git checkout -b feature/minha-feature`)
-3. Commit suas mudanças (`git commit -am 'Add minha feature incrível'`)
-4. Push para a branch (`git push origin feature/minha-feature`)
-5. Abra um Pull Request
+- Símbolos vulneráveis por advisory (quando o OSV trouxer) para reachability no nível da função
+- Call graph entre arquivos (nível 2 real, de ponto de entrada até a função)
+- Go e .NET
+- Modo offline com base OSV local
+- Cache compartilhado para a API em múltiplas instâncias
 
 ---
 
 ## 📄 Licença
 
-Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](./LICENSE).
-
----
-
-## 🙏 Agradecimentos
-
-- **Marchizinho** — Visão arquitetônica e design do projeto
-- **Heinrich VHO** (@heinrickVHO2) — Code review e feedback técnico
-- Comunidade OWASP e pesquisa de segurança
-- Babel, módulo AST, NVD e ecossistema Samburá
-
-Veja [CONTRIBUTORS.md](CONTRIBUTORS.md) para saber mais sobre quem faz Hawkeye possível! ❤️
-
----
-
-## 📧 Suporte
-
-- 📖 [Documentação](./docs)
-- 🐛 [Rastreador de Issues](https://github.com/lucasvsantos591-hue/hawkeye/issues)
-- 💬 [Discussões](https://github.com/lucasvsantos591-hue/hawkeye/discussions)
-- 📧 Email: lucasvsantos591@gmail.com
+[MIT](./LICENSE)

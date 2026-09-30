@@ -4,7 +4,8 @@
 
 ### Prerequisites
 - Node.js 20+
-- Outbound HTTPS to api.osv.dev, api.first.org and www.cisa.gov
+- Outbound HTTPS to api.osv.dev, api.first.org, www.cisa.gov (and repo1.maven.org for Java projects)
+- python3 for Python projects (included in the Docker image); Maven/Gradle optional for exact Java trees
 - Docker (optional)
 
 ### Installation
@@ -76,6 +77,8 @@ docker run --rm -v "$PWD:/workspace:ro" hawkeye:latest \
 | `HAWKEYE_CORS_ORIGIN` | (none) | Set to allow one browser origin |
 | `HAWKEYE_CACHE_DIR` | `~/.cache/hawkeye` | Cache for OSV/EPSS/KEV responses |
 | `HAWKEYE_OSV_URL`, `HAWKEYE_EPSS_URL`, `HAWKEYE_KEV_URL` | public APIs | Point at mirrors if needed |
+| `HAWKEYE_MAVEN_REPO` | `https://repo1.maven.org/maven2` | Maven repository used to resolve POMs when mvn/gradle is not run |
+| `HAWKEYE_ALLOW_BUILD_TOOLS` | (unset) | `1` lets the API run mvn/gradle (executes the analyzed project's build scripts) |
 
 #### Context File (.hawkeye.yaml)
 ```yaml

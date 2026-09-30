@@ -1,7 +1,7 @@
 {
   "name": "hawkeye-cli",
-  "version": "0.2.0",
-  "description": "Hawkeye: reachability-aware dependency vulnerability analysis for JavaScript/TypeScript projects.",
+  "version": "0.3.0",
+  "description": "Hawkeye: reachability-aware dependency vulnerability analysis for npm, Python, Maven and Gradle projects.",
   "type": "module",
   "main": "dist/cli/index.js",
   "bin": {

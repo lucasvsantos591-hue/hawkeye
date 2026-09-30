@@ -1,4 +1,4 @@
-# Hawkeye status (v0.2.0, beta)
+# Hawkeye status (v0.3.0, beta)
 
 This file replaces an earlier checklist that claimed things nobody had verified. Everything below
 was checked on 2026-09-29.
@@ -14,12 +14,15 @@ was checked on 2026-09-29.
 | HTML escaping, SARIF physical locations | Unit tests |
 | API auth, path allow-list, body limit | Manual HTTP tests against the running server |
 | Production build (`npm ci`, build, prune) | Run in a clean directory |
+| Python: uv.lock, poetry.lock, pylock.toml, Pipfile.lock, pip-compile requirements | fastapi template, saleor, poetry, pipenv, warehouse; unit tests |
+| Maven resolver without Maven | Same package set as `mvn dependency:tree` on spring-petclinic (106) and WebGoat (191) |
+| Gradle | `gradlew dependencies` path and build-file resolver on spring-petclinic |
 
 ## Not verified yet
 
 - `docker build`: no Docker access where this was written. The CI `docker` job builds the image and
   checks `/api/health` on every push.
 - Hosting: nothing is deployed. Run the CLI locally or the container yourself.
-- Python and other ecosystems: not supported.
+- Go, Rust, Ruby, PHP, .NET: not supported. Android/KMP Gradle builds not tested.
 
-See the "Limitações atuais" section in [README.md](./README.md) for the known gaps.
+See the "Limitações conhecidas" section in [README.md](./README.md) for the known gaps.
