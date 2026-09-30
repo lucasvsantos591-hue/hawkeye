@@ -3,8 +3,8 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
-import { timingSafeEqual } from 'crypto';
-import { AnalysisEngine, TOOL_VERSION } from '../core/analysis_engine.js';
+import { randomUUID, timingSafeEqual } from 'crypto';
+import { AnalysisEngine, AnalysisInputError, TOOL_VERSION } from '../core/analysis_engine.js';
 import { HTMLReportRenderer } from '../adapters/report/html_renderer.js';
 import { SARIFRenderer } from '../adapters/report/sarif_renderer.js';
 import { ContextLoader } from '../adapters/context/context_loader.js';
@@ -142,8 +142,10 @@ const server = http.createServer(async (req, res) => {
     throw new HttpError(404, 'Not found');
   } catch (error) {
     if (error instanceof HttpError) return send(res, error.status, { error: error.message });
-    process.stderr.write(`[${new Date().toISOString()}] ${method} ${pathname} failed: ${(error as Error).stack}\n`);
-    return send(res, 500, { error: 'Analysis failed', detail: (error as Error).message });
+    if (error instanceof AnalysisInputError) return send(res, 422, { error: error.message });
+    const requestId = randomUUID();
+    process.stderr.write(`[${new Date().toISOString()}] ${requestId} ${method} ${pathname} failed: ${(error as Error).stack}\n`);
+    return send(res, 500, { error: 'Internal error', requestId });
   }
 });
 

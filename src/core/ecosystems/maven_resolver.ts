@@ -3,10 +3,12 @@ import * as path from 'path';
 import { CacheManager } from '../cache_manager.js';
 import { fetchText, mapLimit } from '../http.js';
 import type { GraphNode, Root } from '../inventory_types.js';
+import type { ProjectFs } from '../project_fs.js';
 
 const MAVEN_REPO = (process.env.HAWKEYE_MAVEN_REPO || 'https://repo1.maven.org/maven2').replace(/\/$/, '');
 const POM_TTL = 30 * 24 * 60 * 60 * 1000;
 const MAX_ARTIFACTS = 3000;
+const COORDINATE = /^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/;
 
 export interface MavenDep {
   groupId: string;
@@ -121,9 +123,18 @@ export class MavenResolver {
   private models = new Map<string, Promise<PomModel | null>>();
   readonly warnings = new Set<string>();
 
-  constructor(private cache: CacheManager) {}
+  constructor(
+    private cache: CacheManager,
+    private pfs?: ProjectFs,
+  ) {}
 
   async fetchPom(g: string, a: string, v: string): Promise<string | null> {
+    // Coordinates come from POMs of the analyzed project and its dependencies: never let them shape
+    // anything but the expected repository path.
+    if (![g, a, v].every(x => COORDINATE.test(x))) {
+      this.warnings.add(`Ignored invalid Maven coordinates ${g}:${a}:${v}`);
+      return null;
+    }
     const key = `pom:${g}:${a}:${v}`;
     const cached = this.cache.get<string | null>(key);
     if (cached !== undefined) return cached;
@@ -140,7 +151,8 @@ export class MavenResolver {
 
   /** Effective model of a local pom.xml (parents resolved from disk first, then Maven Central). */
   async localModel(pomPath: string): Promise<PomModel | null> {
-    return this.buildModel(fs.readFileSync(pomPath, 'utf-8'), path.dirname(pomPath));
+    const xml = this.pfs ? this.pfs.read(pomPath) : fs.readFileSync(pomPath, 'utf-8');
+    return this.buildModel(xml, path.dirname(pomPath));
   }
 
   remoteModel(g: string, a: string, v: string): Promise<PomModel | null> {
@@ -163,7 +175,7 @@ export class MavenResolver {
       const parentFile = localParent && fs.existsSync(localParent) && fs.statSync(localParent).isDirectory()
         ? path.join(localParent, 'pom.xml')
         : localParent;
-      if (parentFile && fs.existsSync(parentFile)) {
+      if (parentFile && fs.existsSync(parentFile) && (!this.pfs || this.pfs.inside(parentFile))) {
         const parentXml = fs.readFileSync(parentFile, 'utf-8');
         if (parsePom(parentXml).artifactId === raw.parent.artifactId) {
           parent = await this.buildModel(parentXml, path.dirname(parentFile), depth + 1);

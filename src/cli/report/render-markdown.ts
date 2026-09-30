@@ -1,6 +1,21 @@
 import type { AnalysisResult } from '../../types/analysis-result.js';
 import type { RenderMeta } from './render-html.js';
 
+/** Escapes text from advisories/AI so it cannot inject links, images, HTML or table cells. */
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/[\\`*_{}[\]()#+!|~>]/g, '\\$&')
+    .replace(/</g, '&lt;')
+    .replace(/\r?\n/g, ' ');
+}
+
+/** A code fence longer than any backtick run inside the content. */
+function codeBlock(content: string, lang = ''): string {
+  const longest = Math.max(2, ...(content.match(/`+/g) ?? []).map(run => run.length));
+  const fence = '`'.repeat(longest + 1);
+  return `${fence}${lang}\n${content}\n${fence}`;
+}
+
 export function renderMarkdownReport(result: AnalysisResult, meta: RenderMeta): string {
   const reachable = result.results.filter((v) => v.is_reachable);
   const notReachable = result.results.filter((v) => !v.is_reachable);
@@ -8,7 +23,7 @@ export function renderMarkdownReport(result: AnalysisResult, meta: RenderMeta): 
   let md = `# VRA - Vulnerability Reachability Analysis Report\n\n`;
 
   if (meta.aiPowered && meta.providerName) {
-    md += `_Powered by ${meta.providerName}_\n\n`;
+    md += `_Powered by ${esc(meta.providerName)}_\n\n`;
   }
 
   md += `## Summary\n\n`;
@@ -54,25 +69,25 @@ export function renderMarkdownReport(result: AnalysisResult, meta: RenderMeta): 
 }
 
 function renderMarkdownVulnerability(vuln: any): string {
-  let md = `### ${vuln.vulnerability.cve_id} - ${vuln.vulnerability.package}@${vuln.vulnerability.current_version}\n\n`;
+  let md = `### ${esc(vuln.vulnerability.cve_id)} - ${esc(vuln.vulnerability.package)}@${esc(vuln.vulnerability.current_version)}\n\n`;
 
-  md += `**Severity:** ${vuln.vulnerability.severity} | **Confidence:** ${vuln.confidence}%\n\n`;
+  md += `**Severity:** ${esc(vuln.vulnerability.severity)} | **Confidence:** ${esc(vuln.confidence)}%\n\n`;
 
-  md += `**Affected versions:** ${vuln.vulnerability.affected_versions.join(', ')}\n\n`;
+  md += `**Affected versions:** ${esc(vuln.vulnerability.affected_versions.join(', '))}\n\n`;
 
   if (vuln.call_chain) {
-    md += `**Call chain:** ${vuln.call_chain.entry_point} → ${vuln.call_chain.path.join(' → ')}\n\n`;
+    md += `**Call chain:** ${esc(vuln.call_chain.entry_point)} → ${esc(vuln.call_chain.path.join(' → '))}\n\n`;
   }
 
   if (vuln.reason) {
-    md += `**Reason:** ${vuln.reason}\n\n`;
+    md += `**Reason:** ${esc(vuln.reason)}\n\n`;
   }
 
-  md += `#### Remediation (${vuln.remediation.type})\n\n`;
-  md += `${vuln.remediation.description}\n\n`;
+  md += `#### Remediation (${esc(vuln.remediation.type)})\n\n`;
+  md += `${esc(vuln.remediation.description)}\n\n`;
 
   if (vuln.remediation.required_version) {
-    md += `**Target version:** \`${vuln.remediation.required_version}\`\n\n`;
+    md += `**Target version:** ${esc(vuln.remediation.required_version)}\n\n`;
   }
 
   if (vuln.remediation.breaking_changes !== undefined) {
@@ -82,21 +97,21 @@ function renderMarkdownVulnerability(vuln: any): string {
   if (vuln.remediation.changes_needed && vuln.remediation.changes_needed.length > 0) {
     md += `**Code changes needed:**\n\n`;
     vuln.remediation.changes_needed.forEach((change: string) => {
-      md += `- ${change}\n`;
+      md += `- ${esc(change)}\n`;
     });
     md += `\n`;
   }
 
   if (vuln.remediation.action) {
-    md += `**Action:**\n\n\`\`\`bash\n${vuln.remediation.action}\n\`\`\`\n\n`;
+    md += `**Action** (verify before running):\n\n${codeBlock(String(vuln.remediation.action), 'bash')}\n\n`;
   }
 
   if (vuln.remediation.effort_estimate) {
-    md += `**Effort:** ${vuln.remediation.effort_estimate}\n\n`;
+    md += `**Effort:** ${esc(vuln.remediation.effort_estimate)}\n\n`;
   }
 
   if (vuln.remediation.notes) {
-    md += `**Notes:** ${vuln.remediation.notes}\n\n`;
+    md += `**Notes:** ${esc(vuln.remediation.notes)}\n\n`;
   }
 
   md += `---\n\n`;

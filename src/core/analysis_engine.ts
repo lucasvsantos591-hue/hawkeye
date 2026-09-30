@@ -8,12 +8,16 @@ import { buildImportIndex, type PackageUsage } from './import_index.js';
 import { buildPythonIndex } from './python_index.js';
 import { buildJavaIndex } from './java_index.js';
 import { CacheManager, defaultCacheDir } from './cache_manager.js';
+import { ProjectFs } from './project_fs.js';
 import { lookupThreatIntel } from './threat_intel.js';
 import { majorOf } from './versions.js';
 import { OsvSource, packageKey, type Advisory } from '../adapters/vulnerability_sources/osv_source.js';
 import type { AnalysisResult, Remediation, Severity, VulnerabilityFinding } from '../types/analysis-result.js';
 
 export const TOOL_VERSION = '0.3.0';
+
+/** An error caused by the analyzed input (safe to show to API callers), not by Hawkeye itself. */
+export class AnalysisInputError extends Error {}
 
 export interface AnalysisEngineOptions {
   projectPath: string;
@@ -80,17 +84,18 @@ export class AnalysisEngine {
 
     const projects = discoverProjects(this.root, this.kinds);
     if (projects.length === 0) {
-      throw new Error(
+      throw new AnalysisInputError(
         'No supported project found (package.json, requirements*.txt / pyproject.toml / *.lock, pom.xml, build.gradle)',
       );
     }
     this.progress(`🗂️  Projects: ${projects.map(p => `${p.relDir} (${p.kind})`).join(', ')}`);
 
     const cache = new CacheManager(this.cacheDir);
+    const pfs = new ProjectFs(this.root);
     const scans: ProjectScan[] = [];
     for (const project of projects) {
       try {
-        const inventory = await this.readInventory(project, cache);
+        const inventory = await this.readInventory(project, cache, pfs);
         warnings.push(...inventory.warnings.map(w => `${project.relDir} (${project.kind}): ${w}`));
         const packages = inventory.packages.filter(p => this.includeDev || !p.dev);
         this.progress(
@@ -176,18 +181,19 @@ export class AnalysisEngine {
     };
   }
 
-  private readInventory(project: DiscoveredProject, cache: CacheManager): Promise<DependencyInventory> {
+  private readInventory(project: DiscoveredProject, cache: CacheManager, pfs: ProjectFs): Promise<DependencyInventory> {
     const javaOpts = {
       allowBuildTool: this.allowBuildTool,
       includeDev: this.includeDev,
       cache,
+      pfs,
       onProgress: this.progress,
     };
     switch (project.kind) {
       case 'npm':
-        return Promise.resolve(readNpmInventory(project.dir));
+        return Promise.resolve(readNpmInventory(project.dir, pfs));
       case 'python':
-        return Promise.resolve(readPythonInventory(project.dir));
+        return Promise.resolve(readPythonInventory(project.dir, pfs));
       case 'maven':
         return readMavenInventory(project.dir, javaOpts);
       case 'gradle':

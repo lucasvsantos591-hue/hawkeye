@@ -3,6 +3,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import type { PackageUsage } from './import_index.js';
 import { normalizePyName } from './versions.js';
+import { ProjectFs } from './project_fs.js';
 
 const IGNORED_DIRS = new Set([
   '.git', '.venv', 'venv', 'env', '.env', '.tox', '.nox', '__pycache__', 'site-packages', 'node_modules',
@@ -223,7 +224,8 @@ export function buildPythonIndex(projectPath: string): PythonIndex {
     runtimeLoaded(dist) {
       const n = normalizePyName(dist);
       for (const name of [n, ...importNames(n)]) {
-        const hit = commandText.find(({ text }) => new RegExp(`(^|[\\s"'\\[/=])${name.replace(/[.]/g, '\\.')}($|[\\s"':\\]])`, 'm').test(text));
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const hit = commandText.find(({ text }) => new RegExp(`(^|[\\s"'\\[/=])${escaped}($|[\\s"':\\]])`, 'm').test(text));
         if (hit) return `Invoked from ${hit.file}`;
       }
       return RUNTIME_LOADED.has(n) ? 'Server or database driver that is normally loaded without an import' : null;
@@ -293,10 +295,11 @@ function analyzeFiles(files: string[], warnings: string[]): Record<string, FileR
 /** Reads top_level.txt / RECORD from a virtualenv inside the project to learn exact import names. */
 function readVenvTopLevel(root: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
+  const pfs = new ProjectFs(root);
   for (const venv of ['.venv', 'venv', 'env']) {
     const libDirs = [path.join(root, venv, 'lib'), path.join(root, venv, 'Lib')];
     for (const lib of libDirs) {
-      if (!fs.existsSync(lib)) continue;
+      if (!pfs.isDirectory(lib)) continue;
       const siteDirs = fs.readdirSync(lib).map(d => path.join(lib, d, 'site-packages'));
       siteDirs.push(path.join(lib, 'site-packages'));
       for (const site of siteDirs) {

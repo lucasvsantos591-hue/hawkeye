@@ -6,6 +6,7 @@ import { parse as parseToml } from 'smol-toml';
 import { CacheManager } from '../cache_manager.js';
 import { flattenGraph, type DependencyInventory, type GraphNode, type InstalledPackage, type Root } from '../inventory_types.js';
 import { MavenResolver, type MavenDep } from './maven_resolver.js';
+import { ProjectFs } from '../project_fs.js';
 
 export interface JavaInventoryOptions {
   /** Allow running mvn/gradle (executes the project's build logic). */
@@ -13,6 +14,8 @@ export interface JavaInventoryOptions {
   includeDev: boolean;
   cache: CacheManager;
   onProgress?: (message: string) => void;
+  /** Confines reads of build files to the scanned directory (defaults to the project directory). */
+  pfs?: ProjectFs;
 }
 
 const BUILD_TIMEOUT = 15 * 60 * 1000;
@@ -73,7 +76,9 @@ export async function readMavenInventory(dir: string, opts: JavaInventoryOptions
   const mvn = fs.existsSync(mvnw) ? mvnw : onPath('mvn') ? 'mvn' : null;
 
   if (opts.allowBuildTool && mvn) {
-    opts.onProgress?.(`☕ Running ${path.basename(mvn)} dependency:tree (this can take a few minutes)...`);
+    opts.onProgress?.(
+      `☕ Running ${path.basename(mvn)} dependency:tree (executes this project's Maven build; use --no-build-tool for untrusted repos)...`,
+    );
     const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hawkeye-mvn-')), 'tree.txt');
     const res = await run(
       mvn,
@@ -99,7 +104,7 @@ export async function readMavenInventory(dir: string, opts: JavaInventoryOptions
   }
 
   opts.onProgress?.('☕ Resolving Maven dependencies from pom.xml + Maven Central...');
-  const resolver = new MavenResolver(opts.cache);
+  const resolver = new MavenResolver(opts.cache, opts.pfs ?? new ProjectFs(dir));
   const poms = findFiles(dir, 'pom.xml');
   const models = (await Promise.all(poms.map(p => resolver.localModel(p)))).filter(m => m !== null);
   const localModules = new Set(models.map(m => `${m!.groupId}:${m!.artifactId}`));
@@ -186,25 +191,26 @@ export function parseMavenTree(text: string): InstalledPackage[] {
 
 export async function readGradleInventory(dir: string, opts: JavaInventoryOptions): Promise<DependencyInventory> {
   const warnings: string[] = [];
-  const declared = parseGradleBuildFiles(dir);
+  const pfs = opts.pfs ?? new ProjectFs(dir);
+  const declared = parseGradleBuildFiles(dir, pfs);
 
   const legacyLocks = path.join(dir, 'gradle', 'dependency-locks');
   const lockfiles = [
     ...findFiles(dir, 'gradle.lockfile', 3),
-    ...(fs.existsSync(legacyLocks)
-      ? fs.readdirSync(legacyLocks).filter(f => f.endsWith('.lockfile')).map(f => path.join(legacyLocks, f))
-      : []),
-  ];
+    ...pfs.readdir(legacyLocks).filter(f => f.endsWith('.lockfile')).map(f => path.join(legacyLocks, f)),
+  ].filter(f => pfs.inside(f));
   if (lockfiles.length) {
-    const packages = parseGradleLockfiles(lockfiles, new Set(declared.deps.map(d => `${d.groupId}:${d.artifactId}`)));
+    const packages = parseGradleLockfiles(lockfiles, pfs, new Set(declared.deps.map(d => `${d.groupId}:${d.artifactId}`)));
     return { ecosystem: 'Maven', source: 'gradle.lockfile', lockfilePath: lockfiles[0], packages, warnings };
   }
 
   const gradlew = path.join(dir, 'gradlew');
   const gradle = fs.existsSync(gradlew) ? gradlew : onPath('gradle') ? 'gradle' : null;
   if (opts.allowBuildTool && gradle) {
-    opts.onProgress?.(`🐘 Running ${path.basename(gradle)} dependencies (this can take a few minutes)...`);
-    const projects = [':', ...gradleSubprojects(dir).map(p => `:${p}:`)];
+    opts.onProgress?.(
+      `🐘 Running ${path.basename(gradle)} dependencies (executes this project's Gradle build; use --no-build-tool for untrusted repos)...`,
+    );
+    const projects = [':', ...gradleSubprojects(dir, pfs).map(p => `:${p}:`)];
     const configs = opts.includeDev ? ['runtimeClasspath', 'testRuntimeClasspath'] : ['runtimeClasspath'];
     const all: InstalledPackage[] = [];
     let failed = '';
@@ -229,7 +235,7 @@ export async function readGradleInventory(dir: string, opts: JavaInventoryOption
   }
 
   opts.onProgress?.('🐘 Resolving Gradle dependencies from build files + Maven Central...');
-  const resolver = new MavenResolver(opts.cache);
+  const resolver = new MavenResolver(opts.cache, pfs);
   const depMgmt = new Map<string, MavenDep>();
   for (const bom of declared.boms) {
     const [g, a, v] = bom.split(':');
@@ -266,13 +272,17 @@ function mergeDev(pkgs: InstalledPackage[]): InstalledPackage[] {
   return [...out.values()];
 }
 
-function gradleSubprojects(dir: string): string[] {
-  const settings = ['settings.gradle', 'settings.gradle.kts'].map(f => path.join(dir, f)).find(f => fs.existsSync(f));
+function gradleSubprojects(dir: string, pfs: ProjectFs): string[] {
+  const settings = ['settings.gradle', 'settings.gradle.kts'].map(f => path.join(dir, f)).find(f => pfs.exists(f));
   if (!settings) return [];
-  const text = fs.readFileSync(settings, 'utf-8').replace(/\/\/.*$/gm, '');
+  const text = pfs.read(settings).replace(/\/\/.*$/gm, '');
   const out: string[] = [];
   for (const m of text.matchAll(/\binclude\s*\(?([^)\n]+)\)?/g)) {
-    for (const s of m[1].matchAll(/["']:?([^"']+)["']/g)) out.push(s[1].replace(/^:/, ''));
+    for (const s of m[1].matchAll(/["']:?([^"']+)["']/g)) {
+      const name = s[1].replace(/^:/, '');
+      // Project paths become gradle arguments; reject anything that is not a plain project path.
+      if (/^[A-Za-z0-9_][A-Za-z0-9_.:-]*$/.test(name)) out.push(name);
+    }
   }
   return [...new Set(out)];
 }
@@ -321,10 +331,10 @@ export function parseGradleTree(text: string): InstalledPackage[] {
   return flattenGraph('Maven', nodes, roots);
 }
 
-function parseGradleLockfiles(files: string[], declared: Set<string>): InstalledPackage[] {
+function parseGradleLockfiles(files: string[], pfs: ProjectFs, declared: Set<string>): InstalledPackage[] {
   const out = new Map<string, InstalledPackage>();
   for (const file of files) {
-    for (const line of fs.readFileSync(file, 'utf-8').split(/\r?\n/)) {
+    for (const line of pfs.read(file).split(/\r?\n/)) {
       const m = line.match(/^([^#:=\s]+):([^:=\s]+):([^=\s]+)=(.*)$/);
       if (!m) continue;
       const [, g, a, v, confs] = m;
@@ -355,10 +365,10 @@ interface DeclaredGradle {
   warnings: string[];
 }
 
-export function parseGradleBuildFiles(dir: string): DeclaredGradle {
-  const files = [...findFiles(dir, 'build.gradle', 4), ...findFiles(dir, 'build.gradle.kts', 4)];
-  const vars = gradleVariables(dir, files);
-  const catalog = readVersionCatalog(dir);
+export function parseGradleBuildFiles(dir: string, pfs = new ProjectFs(dir)): DeclaredGradle {
+  const files = [...findFiles(dir, 'build.gradle', 4), ...findFiles(dir, 'build.gradle.kts', 4)].filter(f => pfs.inside(f));
+  const vars = gradleVariables(dir, files, pfs);
+  const catalog = readVersionCatalog(dir, pfs);
   const deps: MavenDep[] = [];
   const boms = new Set<string>();
   const unresolved = new Set<string>();
@@ -366,7 +376,7 @@ export function parseGradleBuildFiles(dir: string): DeclaredGradle {
   const CONFIG = /\b(implementation|api|compile|runtimeOnly|runtime|compileOnly|testImplementation|testRuntimeOnly|testCompile|testCompileOnly|kapt|annotationProcessor)\b/;
 
   for (const file of files) {
-    const text = fs.readFileSync(file, 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    const text = pfs.read(file).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
     const boot = text.match(/id\s*\(?\s*["']org\.springframework\.boot["']\s*\)?\s*version\s*\(?\s*["']([^"']+)["']/);
     if (boot) boms.add(`org.springframework.boot:spring-boot-dependencies:${sub(boot[1])}`);
     for (const m of text.matchAll(/(?:enforcedPlatform|platform|mavenBom)\s*\(?\s*["']([^"':]+):([^"':]+):([^"']+)["']/g)) {
@@ -401,17 +411,17 @@ export function parseGradleBuildFiles(dir: string): DeclaredGradle {
   return { deps, boms: [...boms], warnings };
 }
 
-function gradleVariables(dir: string, files: string[]): Record<string, string> {
+function gradleVariables(dir: string, files: string[], pfs: ProjectFs): Record<string, string> {
   const vars: Record<string, string> = {};
   const propsFile = path.join(dir, 'gradle.properties');
-  if (fs.existsSync(propsFile)) {
-    for (const line of fs.readFileSync(propsFile, 'utf-8').split(/\r?\n/)) {
+  if (pfs.exists(propsFile)) {
+    for (const line of pfs.read(propsFile).split(/\r?\n/)) {
       const m = line.match(/^\s*([\w.]+)\s*=\s*(.+?)\s*$/);
       if (m) vars[m[1]] = m[2];
     }
   }
   for (const file of files) {
-    const text = fs.readFileSync(file, 'utf-8');
+    const text = pfs.read(file);
     for (const m of text.matchAll(/(?:val|var|def|set\s*\(|ext\.)?\s*["']?([A-Za-z_][\w.]*)["']?\s*(?:=|,)\s*["']([0-9][^"'$]*)["']/g)) {
       vars[m[1].replace(/^ext\./, '')] ??= m[2];
     }
@@ -419,13 +429,13 @@ function gradleVariables(dir: string, files: string[]): Record<string, string> {
   return vars;
 }
 
-function readVersionCatalog(dir: string): { libraries: Map<string, { groupId: string; artifactId: string; version?: string }> } {
+function readVersionCatalog(dir: string, pfs: ProjectFs): { libraries: Map<string, { groupId: string; artifactId: string; version?: string }> } {
   const libraries = new Map<string, { groupId: string; artifactId: string; version?: string }>();
   const file = path.join(dir, 'gradle', 'libs.versions.toml');
-  if (!fs.existsSync(file)) return { libraries };
+  if (!pfs.exists(file)) return { libraries };
   let toml: any;
   try {
-    toml = parseToml(fs.readFileSync(file, 'utf-8'));
+    toml = parseToml(pfs.read(file));
   } catch {
     return { libraries };
   }

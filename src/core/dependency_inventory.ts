@@ -1,7 +1,7 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import semver from 'semver';
 import * as yaml from 'js-yaml';
+import { ProjectFs } from './project_fs.js';
 import { flattenGraph, type DependencyInventory, type GraphNode, type InstalledPackage, type Root } from './inventory_types.js';
 
 export type { InstalledPackage, DependencyInventory } from './inventory_types.js';
@@ -15,19 +15,19 @@ interface Graph {
 
 export const NPM_LOCKFILES: InventorySource[] = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock'];
 
-export function readNpmInventory(projectPath: string): DependencyInventory {
+export function readNpmInventory(projectPath: string, pfs = new ProjectFs(projectPath)): DependencyInventory {
   const pkgJsonPath = path.join(projectPath, 'package.json');
-  if (!fs.existsSync(pkgJsonPath)) {
+  if (!pfs.exists(pkgJsonPath)) {
     throw new Error(`package.json not found in ${projectPath}`);
   }
-  const rootPkg = readJson(pkgJsonPath);
+  const rootPkg = JSON.parse(pfs.read(pkgJsonPath));
   const warnings: string[] = [];
 
   for (const lockName of NPM_LOCKFILES) {
     const lockfilePath = path.join(projectPath, lockName);
-    if (!fs.existsSync(lockfilePath)) continue;
+    if (!pfs.exists(lockfilePath)) continue;
 
-    const content = fs.readFileSync(lockfilePath, 'utf-8');
+    const content = pfs.read(lockfilePath);
     let graph: Graph;
     if (lockName === 'package-lock.json') {
       graph = npmGraph(JSON.parse(content), rootPkg);
@@ -36,7 +36,7 @@ export function readNpmInventory(projectPath: string): DependencyInventory {
     } else if (lockName === 'bun.lock') {
       graph = bunGraph(JSON.parse(content.replace(/,(\s*[}\]])/g, '$1')));
     } else {
-      graph = yarnGraph(content, projectPath, rootPkg, warnings);
+      graph = yarnGraph(content, projectPath, rootPkg, warnings, pfs);
     }
 
     if (graph.roots.length === 0 && hasDeclaredDeps(rootPkg)) {
@@ -57,10 +57,6 @@ export function readNpmInventory(projectPath: string): DependencyInventory {
       'Commit a lockfile for accurate results.',
   );
   return { ecosystem: 'npm', source: 'package.json', packages: manifestOnly(rootPkg, warnings), warnings };
-}
-
-function readJson(file: string): any {
-  return JSON.parse(fs.readFileSync(file, 'utf-8'));
 }
 
 function hasDeclaredDeps(pkg: any): boolean {
@@ -273,7 +269,7 @@ function bunGraph(lock: any): Graph {
 
 // ---------- yarn (classic v1 and berry v2+) ----------
 
-function yarnGraph(content: string, projectPath: string, rootPkg: any, warnings: string[]): Graph {
+function yarnGraph(content: string, projectPath: string, rootPkg: any, warnings: string[], pfs: ProjectFs): Graph {
   const nodes = new Map<string, GraphNode>();
   const specToId = new Map<string, string>();
   const nameToIds = new Map<string, string[]>();
@@ -344,7 +340,7 @@ function yarnGraph(content: string, projectPath: string, rootPkg: any, warnings:
   }
 
   const roots: Root[] = [];
-  for (const manifest of [rootPkg, ...readWorkspaceManifests(projectPath, rootPkg, warnings)]) {
+  for (const manifest of [rootPkg, ...readWorkspaceManifests(projectPath, rootPkg, warnings, pfs)]) {
     const addRoots = (deps: Record<string, string> | undefined, dev: boolean) => {
       for (const [name, range] of Object.entries(deps ?? {})) {
         if (/^(workspace:|link:|file:)/.test(range)) continue;
@@ -359,7 +355,7 @@ function yarnGraph(content: string, projectPath: string, rootPkg: any, warnings:
   return { nodes, roots };
 }
 
-function readWorkspaceManifests(projectPath: string, rootPkg: any, warnings: string[]): any[] {
+function readWorkspaceManifests(projectPath: string, rootPkg: any, warnings: string[], pfs: ProjectFs): any[] {
   const patterns: string[] = Array.isArray(rootPkg.workspaces)
     ? rootPkg.workspaces
     : rootPkg.workspaces?.packages ?? [];
@@ -372,20 +368,12 @@ function readWorkspaceManifests(projectPath: string, rootPkg: any, warnings: str
       continue;
     }
     const dirs = isGlob
-      ? safeReaddir(path.join(projectPath, clean)).map(d => path.join(projectPath, clean, d))
+      ? pfs.readdir(path.join(projectPath, clean)).map(d => path.join(projectPath, clean, d))
       : [path.join(projectPath, clean)];
     for (const dir of dirs) {
       const file = path.join(dir, 'package.json');
-      if (fs.existsSync(file)) manifests.push(readJson(file));
+      if (pfs.exists(file)) manifests.push(JSON.parse(pfs.read(file)));
     }
   }
   return manifests;
-}
-
-function safeReaddir(dir: string): string[] {
-  try {
-    return fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
 }

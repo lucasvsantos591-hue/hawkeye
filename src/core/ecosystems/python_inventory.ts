@@ -3,6 +3,7 @@ import * as path from 'path';
 import { parse as parseToml } from 'smol-toml';
 import { flattenGraph, type DependencyInventory, type GraphNode, type InstalledPackage, type Root } from '../inventory_types.js';
 import { normalizePyName } from '../versions.js';
+import { ProjectFs } from '../project_fs.js';
 
 export const PYTHON_LOCKFILES = ['uv.lock', 'poetry.lock', 'pdm.lock', 'pylock.toml', 'Pipfile.lock'];
 const DEV_GROUP = /^(dev|test|tests|testing|lint|docs?|typing|mypy|ci)$/i;
@@ -20,24 +21,24 @@ export function hasPythonLock(dir: string): boolean {
   return PYTHON_LOCKFILES.some(f => fs.existsSync(path.join(dir, f))) || requirementFiles(dir).length > 0;
 }
 
-export function readPythonInventory(dir: string): DependencyInventory {
+export function readPythonInventory(dir: string, pfs = new ProjectFs(dir)): DependencyInventory {
   const warnings: string[] = [];
-  const pyproject = readToml(path.join(dir, 'pyproject.toml'));
-  const declared = declaredDeps(pyproject, readToml(path.join(dir, 'Pipfile')));
+  const pyproject = readToml(path.join(dir, 'pyproject.toml'), pfs);
+  const declared = declaredDeps(pyproject, readToml(path.join(dir, 'Pipfile'), pfs));
 
   for (const lock of PYTHON_LOCKFILES) {
     const file = path.join(dir, lock);
-    if (!fs.existsSync(file)) continue;
+    if (!pfs.exists(file)) continue;
     const packages =
       lock === 'Pipfile.lock'
-        ? pipfileLock(JSON.parse(fs.readFileSync(file, 'utf-8')), declared)
-        : tomlLock(lock, readToml(file), declared, pyproject);
+        ? pipfileLock(JSON.parse(pfs.read(file)), declared)
+        : tomlLock(lock, readToml(file, pfs), declared, pyproject);
     return { ecosystem: 'PyPI', source: lock, lockfilePath: file, packages, warnings };
   }
 
   const reqFiles = requirementFiles(dir);
   if (reqFiles.length) {
-    const packages = requirementsInventory(dir, reqFiles, declared, warnings);
+    const packages = requirementsInventory(dir, reqFiles, declared, warnings, pfs);
     return {
       ecosystem: 'PyPI',
       source: reqFiles.map(f => path.relative(dir, f)).join(', '),
@@ -65,10 +66,10 @@ interface Declared {
   minVersion?: string;
 }
 
-function readToml(file: string): any {
-  if (!fs.existsSync(file)) return undefined;
+function readToml(file: string, pfs: ProjectFs): any {
+  if (!pfs.exists(file)) return undefined;
   try {
-    return parseToml(fs.readFileSync(file, 'utf-8'));
+    return parseToml(pfs.read(file));
   } catch {
     return undefined;
   }
@@ -264,6 +265,7 @@ function requirementsInventory(
   files: string[],
   declared: Map<string, Declared>,
   warnings: string[],
+  pfs: ProjectFs,
 ): InstalledPackage[] {
   const entries: ReqEntry[] = [];
   const unpinned: string[] = [];
@@ -273,7 +275,11 @@ function requirementsInventory(
     const real = path.resolve(file);
     if (visited.has(real) || !fs.existsSync(real)) return;
     visited.add(real);
-    const lines = fs.readFileSync(real, 'utf-8').replace(/\\\r?\n/g, ' ').split(/\r?\n/);
+    if (!pfs.inside(real)) {
+      warnings.push(`Ignored ${path.basename(real)}: it resolves outside the scanned directory`);
+      return;
+    }
+    const lines = pfs.read(real).replace(/\\\r?\n/g, ' ').split(/\r?\n/);
     let current: ReqEntry | null = null;
     let inVia = false;
     for (const raw of lines) {
@@ -330,8 +336,8 @@ function requirementsInventory(
   const inFiles = new Set(
     ['requirements.in', 'requirements-dev.in', 'dev-requirements.in']
       .map(f => path.join(dir, f))
-      .filter(f => fs.existsSync(f))
-      .flatMap(f => fs.readFileSync(f, 'utf-8').split(/\r?\n/))
+      .filter(f => pfs.exists(f))
+      .flatMap(f => pfs.read(f).split(/\r?\n/))
       .map(l => parseRequirement(l.replace(/#.*$/, ''))?.name)
       .filter((n): n is string => !!n),
   );
