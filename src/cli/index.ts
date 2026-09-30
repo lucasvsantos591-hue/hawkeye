@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
+import { realpathSync } from 'fs';
+import { fileURLToPath } from 'url';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { analyzeCommand } from './commands/analyze.js';
 import { scanCommand } from './commands/scan.js';
 import { reportCommand } from './commands/report.js';
 import { exposeCommand } from './commands/expose.js';
+import { batchCommand } from './commands/batch.js';
 
 export async function main() {
   const argv = yargs(hideBin(process.argv))
@@ -13,6 +16,7 @@ export async function main() {
     .command(scanCommand)
     .command(reportCommand)
     .command(exposeCommand)
+    .command(batchCommand)
     .option('verbose', {
       alias: 'v',
       type: 'boolean',
@@ -34,10 +38,10 @@ export async function main() {
   return argv;
 }
 
-// For ESM module
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedPath = process.argv[1] ? realpathSync(process.argv[1]) : '';
+if (invokedPath === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error('Error:', error.message);
-    process.exit(1);
+    process.stderr.write(`Error: ${error.message}\n`);
+    process.exitCode = 1;
   });
 }

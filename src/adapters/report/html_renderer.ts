@@ -1,6 +1,7 @@
 import { AnalysisResult, VulnerabilityFinding } from '../../types/analysis-result.js';
 import type { HawkeyeContext } from '../context/context_loader.js';
-import { RiskRescorer, RescoreResult } from '../../core/risk_rescorer.js';
+import { RiskRescorer, RescoreResult, findingKey } from '../../core/risk_rescorer.js';
+import { escapeHtml as e, safeUrl } from './escape.js';
 
 /**
  * Renders analysis results as HTML report with exposure context
@@ -27,7 +28,8 @@ export class HTMLReportRenderer {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hawkeye Vulnerability Report - ${this.result.project_name}</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+  <title>Hawkeye Vulnerability Report - ${e(this.result.project_name)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -204,6 +206,7 @@ export class HTMLReportRenderer {
   <div class="container">
     ${this.renderHeader()}
     ${this.renderSummary()}
+    ${this.renderScanInfo()}
     ${this.renderRescoringSummary()}
     ${this.renderVulnerabilities()}
     ${this.renderFooter()}
@@ -218,19 +221,19 @@ export class HTMLReportRenderer {
 
     return `<header>
       <h1>🎯 Hawkeye Vulnerability Report</h1>
-      <p>${this.result.project_name}</p>
+      <p>${e(this.result.project_name)}</p>
       <div class="metadata">
         <div class="metadata-item">
           <div class="metadata-label">Project Path</div>
-          <div class="metadata-value">${this.result.project_path || 'N/A'}</div>
+          <div class="metadata-value">${e(this.result.project_path || 'N/A')}</div>
         </div>
         <div class="metadata-item">
           <div class="metadata-label">Generated</div>
-          <div class="metadata-value">${new Date(this.result.generated_at).toLocaleString()}</div>
+          <div class="metadata-value">${e(new Date(this.result.generated_at).toLocaleString())}</div>
         </div>
         <div class="metadata-item">
           <div class="metadata-label">Network Exposure</div>
-          <div class="exposure-badge ${exposureClass}">${exposure || 'Unknown'}</div>
+          <div class="exposure-badge ${e(exposureClass)}">${e(exposure || 'Unknown')}</div>
         </div>
       </div>
     </header>`;
@@ -242,19 +245,19 @@ export class HTMLReportRenderer {
     return `<div class="summary">
       <div class="summary-card critical">
         <div class="summary-label">Critical Vulnerabilities</div>
-        <div class="summary-value">${critical_reachable || 0}</div>
+        <div class="summary-value">${e(critical_reachable || 0)}</div>
       </div>
       <div class="summary-card high">
         <div class="summary-label">High Severity</div>
-        <div class="summary-value">${high_reachable || 0}</div>
+        <div class="summary-value">${e(high_reachable || 0)}</div>
       </div>
       <div class="summary-card medium">
         <div class="summary-label">Medium Severity</div>
-        <div class="summary-value">${medium_reachable || 0}</div>
+        <div class="summary-value">${e(medium_reachable || 0)}</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">Risk Score</div>
-        <div class="summary-value">${this.result.overall_risk_score}</div>
+        <div class="summary-value">${e(this.result.overall_risk_score)}</div>
       </div>
     </div>`;
   }
@@ -273,9 +276,9 @@ export class HTMLReportRenderer {
 
     return `<div class="rescoring-notice">
       <strong>⚠️ Risk Rescoring Applied:</strong><br>
-      Application exposure: <strong>${summary.exposure}</strong><br>
+      Application exposure: <strong>${e(summary.exposure)}</strong><br>
       Risk scores adjusted by <strong>${direction} ${percentChange}%</strong> based on network exposure.
-      <br>Critical findings: ${summary.originalCritical} → ${summary.adjustedCritical}
+      <br>Critical findings: ${e(summary.originalCritical)} → ${e(summary.adjustedCritical)}
     </div>`;
   }
 
@@ -289,55 +292,67 @@ export class HTMLReportRenderer {
     return `<div class="vulnerabilities">${vulns}</div>`;
   }
 
+  private renderScanInfo(): string {
+    const scan = this.result.scan;
+    if (!scan) return '';
+    const warnings = scan.warnings.map(w => `<li>${e(w)}</li>`).join('');
+    return `<div class="rescoring-notice">
+      <strong>Scan:</strong> ${e(scan.packages_scanned)} packages from ${e(scan.dependency_source)},
+      ${e(scan.files_scanned)} source files, advisories from ${e(scan.vulnerability_source)}.
+      ${scan.include_dev ? '' : 'Dev-only dependencies excluded.'}
+      ${warnings ? `<ul style="margin: 8px 0 0 20px;">${warnings}</ul>` : ''}
+    </div>`;
+  }
+
   private renderVulnerability(finding: VulnerabilityFinding): string {
-    const key = `${finding.vulnerability.cve_id}:${finding.vulnerability.package}`;
-    const rescore = this.rescores.get(key);
-    const riskLevel = rescore?.riskLevel.toLowerCase() || 'medium';
+    const v = finding.vulnerability;
+    const rescore = this.rescores.get(findingKey(finding));
+    const riskLevel = finding.is_reachable ? rescore?.riskLevel.toLowerCase() || 'medium' : 'low';
 
-    const tags = [];
-    if (finding.is_reachable) tags.push('<span class="tag reachable">Reachable</span>');
-    if (finding.vulnerability.is_exploited_in_wild)
-      tags.push('<span class="tag exploited">Exploited in Wild</span>');
+    const tags: string[] = [];
+    tags.push(
+      finding.is_reachable
+        ? '<span class="tag reachable">Reachable</span>'
+        : '<span class="tag">Not reachable</span>',
+    );
+    if (v.is_exploited_in_wild) tags.push('<span class="tag exploited">CISA KEV: exploited in the wild</span>');
+    if (v.dependency_type) tags.push(`<span class="tag">${e(v.dependency_type)}</span>`);
+    if (v.is_dev) tags.push('<span class="tag">dev</span>');
 
-    return `<div class="vuln-card ${riskLevel}">
+    const link = safeUrl(v.advisory_url);
+    const title = v.advisory_id && v.advisory_id !== v.cve_id ? `${v.cve_id} · ${v.advisory_id}` : v.cve_id;
+    const via = v.introduced_via?.length ? `<div class="detail-item"><div class="detail-label">Introduced via</div><div class="detail-value">${e(v.introduced_via.join(', '))}</div></div>` : '';
+    const sites = finding.evidence?.sites.length
+      ? `<div style="margin-top: 8px; font-size: 0.85em;"><strong>Used at:</strong> ${finding.evidence.sites.map(x => `<code>${e(x)}</code>`).join(' ')}</div>`
+      : '';
+
+    return `<div class="vuln-card ${e(riskLevel)}">
       <div class="vuln-header">
         <div class="vuln-title">
-          <div class="vuln-cve">${finding.vulnerability.cve_id}</div>
-          <div class="vuln-package">${finding.vulnerability.package}@${finding.vulnerability.current_version}</div>
+          <div class="vuln-cve">${link ? `<a href="${link}" rel="noopener noreferrer">${e(title)}</a>` : e(title)}</div>
+          <div class="vuln-package">${e(v.package)}@${e(v.current_version)}</div>
+          ${v.summary ? `<div style="color: #444; margin-top: 4px;">${e(v.summary)}</div>` : ''}
         </div>
         <div>
-          <div class="score-badge original">Original: ${rescore?.originalScore || 0}</div>
-          <div class="score-badge adjusted">Adjusted: ${rescore?.adjustedScore || 0}</div>
-          ${rescore && rescore.multiplier !== 1.0 ? `<div class="multiplier-badge">×${rescore.multiplier.toFixed(1)}</div>` : ''}
+          <div class="score-badge original">Score: ${e(rescore?.originalScore ?? 0)}</div>
+          ${rescore && rescore.multiplier !== 1.0 ? `<div class="score-badge adjusted">Adjusted: ${e(rescore.adjustedScore)}</div><div class="multiplier-badge">×${e(rescore.multiplier.toFixed(1))}</div>` : ''}
         </div>
       </div>
 
       <div class="vuln-details">
-        <div class="detail-item">
-          <div class="detail-label">Severity</div>
-          <div class="detail-value">${finding.vulnerability.severity}</div>
-        </div>
-        <div class="detail-item">
-          <div class="detail-label">Reachability</div>
-          <div class="detail-value">Level ${finding.reachability_level} (${finding.is_reachable ? '✓' : '✗'})</div>
-        </div>
-        <div class="detail-item">
-          <div class="detail-label">Confidence</div>
-          <div class="detail-value">${finding.confidence}%</div>
-        </div>
-        ${finding.vulnerability.epss_score ? `<div class="detail-item">
-          <div class="detail-label">EPSS Score</div>
-          <div class="detail-value">${finding.vulnerability.epss_score.toFixed(1)}</div>
-        </div>` : ''}
+        <div class="detail-item"><div class="detail-label">Severity</div><div class="detail-value">${e(v.severity)}</div></div>
+        <div class="detail-item"><div class="detail-label">Fixed in</div><div class="detail-value">${e(v.fixed_version ?? 'no fix published')}</div></div>
+        <div class="detail-item"><div class="detail-label">Reachability</div><div class="detail-value">Level ${e(finding.reachability_level)} · ${e(finding.confidence)}% confidence</div></div>
+        ${v.epss_score !== undefined ? `<div class="detail-item"><div class="detail-label">EPSS (30-day exploit probability)</div><div class="detail-value">${e(v.epss_score.toFixed(2))}%${v.epss_percentile !== undefined ? ` · p${e(Math.round(v.epss_percentile))}` : ''}</div></div>` : ''}
+        ${via}
       </div>
 
-      ${rescore ? `<div style="margin-top: 10px; font-size: 0.85em; color: #666;">
-        <strong>Rescoring:</strong> ${rescore.reason}
-      </div>` : ''}
+      ${finding.reason ? `<div style="margin-top: 10px; font-size: 0.9em; color: #444;">${e(finding.reason)}</div>` : ''}
+      ${sites}
 
       ${finding.remediation ? `<div style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-left: 3px solid #0066cc; border-radius: 3px;">
-        <strong>Remediation:</strong> ${finding.remediation.description || 'Update package'}
-        ${finding.remediation.action ? `<br/><code>${finding.remediation.action}</code>` : ''}
+        <strong>Remediation${this.aiProvider ? ' (AI-generated, verify before running)' : ''}:</strong> ${e(finding.remediation.description)}
+        ${finding.remediation.action ? `<br/><code>${e(finding.remediation.action)}</code>` : ''}
       </div>` : ''}
 
       <div class="tags">
@@ -347,14 +362,10 @@ export class HTMLReportRenderer {
   }
 
   private renderFooter(): string {
-    let aiInfo = '';
-    if (this.aiProvider) {
-      aiInfo = `<p>Powered by ${this.aiProvider} for AI-assisted remediations</p>`;
-    }
+    const ai = this.aiProvider ? `<p>Powered by ${e(this.aiProvider)} for AI-assisted remediations</p>` : '';
     return `<footer>
-      <p>Generated by Hawkeye v${this.result.schema_version}</p>
-      <p>Report includes network exposure context and risk rescoring adjustments</p>
-      ${aiInfo}
+      <p>Generated by Hawkeye${this.result.scan ? ` v${e(this.result.scan.tool_version)}` : ''} · schema ${e(this.result.schema_version)}</p>
+      ${ai}
     </footer>`;
   }
 }

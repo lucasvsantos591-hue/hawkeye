@@ -5,13 +5,15 @@ import { assertAnalysisResult } from '../../types/analysis-result.js';
 import { createAIProvider, type AIProviderName } from '../../adapters/ai_providers/provider_factory.js';
 import { renderMarkdownReport } from '../report/render-markdown.js';
 import { renderDocxReport } from '../../adapters/report/docx_renderer.js';
-import { enrichmentService } from '../../adapters/enrichment/enrichment_service.js';
+import { lookupThreatIntel } from '../../core/threat_intel.js';
+import { CacheManager } from '../../core/cache_manager.js';
+import { SARIFRenderer } from '../../adapters/report/sarif_renderer.js';
 import { ContextLoader } from '../../adapters/context/context_loader.js';
 import { HTMLReportRenderer } from '../../adapters/report/html_renderer.js';
 
 export interface ReportPipelineOptions {
   input: string;
-  format: 'html' | 'markdown' | 'json' | 'docx';
+  format: 'html' | 'markdown' | 'json' | 'docx' | 'sarif';
   output?: string;
   aiProvider?: AIProviderName | 'none';
   aiToken?: string;
@@ -46,18 +48,22 @@ export async function runReportPipeline(
   const context = ContextLoader.loadContext(projectPath);
 
   if (context) {
-    console.error(`📍 Loaded context from: ${context.sourceFile}`);
-    console.error(`   Exposure: ${context.config.exposure}`);
+    process.stderr.write(`📍 Loaded context from ${context.sourceFile} (exposure: ${context.config.exposure})\n`);
   }
 
   // Optionally enrich with CVE context (CISA KEV + FIRST EPSS)
   if (opts.enrichment) {
-    try {
-      const enrichedFindings = await enrichmentService.enrichVulnerabilities(result.results);
-      (result as any).enriched_results = enrichedFindings;
-    } catch (error) {
-      console.warn(`⚠️ Warning: CVE enrichment failed: ${(error as Error).message}`);
-      // Continue without enrichment
+    const cache = new CacheManager();
+    const intel = await lookupThreatIntel(result.results.map(f => f.vulnerability.cve_id), cache);
+    cache.save();
+    intel.warnings.forEach(w => process.stderr.write(`⚠️  ${w}\n`));
+    for (const finding of result.results) {
+      const epss = intel.epss.get(finding.vulnerability.cve_id);
+      if (epss) {
+        finding.vulnerability.epss_score = epss.score;
+        finding.vulnerability.epss_percentile = epss.percentile;
+      }
+      if (intel.kev.size) finding.vulnerability.is_exploited_in_wild = intel.kev.has(finding.vulnerability.cve_id);
     }
   }
 
@@ -92,7 +98,7 @@ export async function runReportPipeline(
         }
       }
     } catch (error) {
-      console.warn(`⚠️ Warning: AI enhancement failed: ${(error as Error).message}`);
+      process.stderr.write(`⚠️  AI enhancement failed: ${(error as Error).message}\n`);
       // Continue without AI enhancement
     }
   }
@@ -111,6 +117,8 @@ export async function runReportPipeline(
     });
   } else if (opts.format === 'docx') {
     rendered = await renderDocxReport(result);
+  } else if (opts.format === 'sarif') {
+    rendered = new SARIFRenderer(result).render();
   } else if (opts.format === 'json') {
     rendered = JSON.stringify(result, null, 2);
   } else {
@@ -133,7 +141,7 @@ export const reportCommand = {
       .option('format', {
         alias: 'f',
         type: 'string',
-        choices: ['html', 'markdown', 'json', 'docx'],
+        choices: ['html', 'markdown', 'json', 'docx', 'sarif'],
         default: 'html',
         description: 'Output report format',
       })
@@ -180,35 +188,25 @@ export const reportCommand = {
     };
 
     try {
-      console.log(`📄 Generating ${options.format.toUpperCase()} report from ${options.input}...`);
-
-      if (options.enrichment) {
-        console.log(`🔍 Enriching findings with CVE context (CISA KEV + FIRST EPSS)...`);
-      }
-
-      if (options.aiProvider && options.aiProvider !== 'none') {
-        console.log(`🤖 Using AI provider: ${options.aiProvider}`);
-      }
+      const log = (m: string) => process.stderr.write(`${m}\n`);
+      log(`📄 Generating ${options.format.toUpperCase()} report from ${options.input}...`);
+      if (options.enrichment) log('🔍 Enriching findings with CISA KEV + FIRST EPSS...');
+      if (options.aiProvider && options.aiProvider !== 'none') log(`🤖 Using AI provider: ${options.aiProvider}`);
 
       const rendered = await runReportPipeline(options);
 
       if (options.output) {
-        if (typeof rendered === 'string') {
-          fs.writeFileSync(options.output, rendered);
-        } else {
-          fs.writeFileSync(options.output, rendered);
-        }
-        console.log(`✅ Report saved to: ${options.output}`);
+        fs.writeFileSync(options.output, rendered);
+        log(`✅ Report saved to: ${options.output}`);
+      } else if (typeof rendered === 'string') {
+        process.stdout.write(rendered.endsWith('\n') ? rendered : `${rendered}\n`);
       } else {
-        if (typeof rendered === 'string') {
-          console.log(rendered);
-        } else {
-          console.log('[Binary data - use --output to save to file]');
-        }
+        log('DOCX is binary; use --output to save it to a file');
+        process.exitCode = 1;
       }
     } catch (error) {
-      console.error('❌ Report generation failed:', (error as Error).message);
-      process.exit(1);
+      process.stderr.write(`❌ Report generation failed: ${(error as Error).message}\n`);
+      process.exitCode = 1;
     }
   },
 };

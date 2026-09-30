@@ -1,214 +1,107 @@
-# 🎯 Hawkeye - V2.2 (Production Ready)
+# 🎯 Hawkeye
 
 [![CI Status](https://github.com/lucasvsantos591-hue/hawkeye/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasvsantos591-hue/hawkeye/actions)
-[![Docker Image](https://img.shields.io/badge/Docker-Ready-blue)](./Dockerfile)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Node.js 18+](https://img.shields.io/badge/Node.js-18+-green)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.2+-blue)](https://www.typescriptlang.org/)
-[![Hawkeye V2.2](https://img.shields.io/badge/Hawkeye-V2.2-brightgreen.svg)](.)
-[![Production Deploy](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)](./DEPLOYMENT.md)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
 
-> **Precision Vulnerability Reachability Analysis**  
-> One Shot. One Target. No False Positives.
+> **Análise de vulnerabilidades em dependências com reachability**
 >
-> Go beyond version-based scanning to determine if a vulnerability is truly exploitable in your code.
->
-> **✨ NEW V2.2:** 
-> - 🚀 HTTP API Server for production deployment
-> - 🐳 Docker support with health checks
-> - 📊 Batch processing for multiple projects
-> - 🔐 K8s + Terraform context extraction
-> - 📄 SARIF format export
-> - 🎯 Risk rescoring based on exposure
-> - 💾 Persistent cache (~80% faster 2nd run)
+> O Hawkeye lista as vulnerabilidades conhecidas das versões **realmente instaladas** no seu projeto
+> e diz quais delas o seu código de fato usa. Assim você prioriza o que importa em vez de corrigir tudo.
 
-## 🚀 Quick Start
+**Status: beta (v0.2.0).** Em teste com repositórios reais. Veja [Limitações](#-limitações-atuais) antes de confiar no resultado.
 
-### Docker (Recommended)
+## 🚀 Quick Start (rodar no seu repositório)
+
+Requisitos: Node.js 20+ e um projeto JavaScript/TypeScript com `package.json`. Commite o lockfile
+(`package-lock.json`, `yarn.lock` ou `pnpm-lock.yaml`) para ter versões exatas.
+
+```bash
+git clone https://github.com/lucasvsantos591-hue/hawkeye.git && cd hawkeye
+npm ci && npm run build
+
+# Análise (JSON no stdout, progresso no stderr)
+node dist/cli/index.js analyze /caminho/do/seu/repo > resultado.json
+
+# Relatório HTML direto
+node dist/cli/index.js analyze /caminho/do/seu/repo -f html -o relatorio.html
+
+# SARIF para GitHub Code Scanning
+node dist/cli/index.js analyze /caminho/do/seu/repo -f sarif -o hawkeye.sarif
+
+# Falhar o CI se houver finding alcançável HIGH ou maior
+node dist/cli/index.js analyze . --fail-on high > /dev/null
+
+# Incluir devDependencies (por padrão são ignoradas)
+node dist/cli/index.js analyze . --include-dev
+
+# Consultar um pacote específico
+node dist/cli/index.js scan lodash 4.17.20 -f table
+```
+
+O acesso à internet é necessário: as vulnerabilidades vêm do [OSV.dev](https://osv.dev), o EPSS da
+[FIRST](https://www.first.org/epss/) e a lista de exploração ativa do [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog).
+As respostas ficam em cache em `~/.cache/hawkeye` (use `--cache <dir>` ou `--no-cache`).
+
+## 🔍 Como funciona
+
+1. **Inventário:** lê o lockfile (npm v1/v2/v3, yarn classic e berry, pnpm v5/v6/v9) e monta a árvore
+   de dependências com a versão instalada de cada pacote. Isso inclui transitivas e sabe qual dependência direta puxou cada uma.
+2. **Vulnerabilidades:** consulta o OSV.dev (GitHub Advisory Database) para cada `pacote@versão`.
+   O retorno traz severidade, versão corrigida e link do advisory.
+3. **Reachability** (índice de imports via Babel AST de todo o código, exceto `node_modules`, `dist`, `build`...):
+   - **Nível 1:** o pacote é importado no código de produção?
+   - **Nível 2 (padrão):** os bindings importados são realmente usados? Registra quais membros
+     (`_.template`, `express.json`...) e onde (`arquivo:linha`).
+   - Imports só de tipo (`import type`), só em testes ou não usados são marcados como **não alcançáveis**, com o motivo.
+   - Dependência transitiva é alcançável se a dependência direta que a puxa é usada (confiança menor).
+4. **Priorização:** EPSS (probabilidade de exploração em 30 dias) e CISA KEV (exploração ativa confirmada).
+   A ordenação é: alcançável → KEV → severidade → EPSS.
+5. **Remediação:** versão mínima corrigida. Para transitivas, sugere `overrides`.
+
+Cada finding traz `reason` e `evidence` explicando a decisão. Revise os não alcançáveis antes de descartá-los.
+
+## ⚠️ Limitações atuais
+
+- **Só npm (JavaScript/TypeScript).** Python, Java, Go etc. ainda não são suportados.
+- **O Nível 2 não sabe qual função é a vulnerável.** Os advisories do npm raramente trazem essa informação.
+  Ele diz *que* o pacote é usado e *como*; cabe a você cruzar os membros usados com o advisory.
+- **O Nível 3 (data-flow) não existe ainda.** `--level 3` roda o nível 2 com um aviso.
+- **Pacotes carregados indiretamente** (plugins de framework, drivers configurados por string, binários de CLI)
+  aparecem como "declared but never imported" com confiança de 70%. Revise esses casos.
+- **Sem lockfile**, só as dependências diretas são verificadas, na menor versão permitida pelo range.
+- **Workspaces yarn** só com padrões simples (`packages/*`).
+- O rescoring por exposição (`.hawkeye.yaml`) é heurístico; o `expose` faz consultas DNS a terceiros (`dns.google`, `crt.sh`).
+
+## 🌐 API HTTP / Docker
+
 ```bash
 docker build -t hawkeye .
-docker run -p 3000:3000 hawkeye
-curl http://localhost:3000/api/health
+docker run -p 3000:3000 -e HAWKEYE_API_TOKEN=troque-isto \
+  -v /caminho/dos/repos:/workspace:ro hawkeye
+
+curl localhost:3000/api/health
+curl -X POST localhost:3000/api/analyze -H "Authorization: Bearer troque-isto" \
+  -d '{"projectPath": "meu-repo", "format": "json"}'
 ```
 
-### Node.js
+O servidor não sobe fora de localhost sem `HAWKEYE_API_TOKEN`. Ele só analisa caminhos dentro de
+`HAWKEYE_ALLOWED_ROOT` (no Docker: `/workspace`). Detalhes em [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+### Batch
+
 ```bash
-npm install
-npm run build
-node dist/cli/server.js
-```
-
-### CLI Single Project
-```bash
-node dist/cli/index.js analyze /path/to/project --level 2
-node dist/cli/index.js report analysis.json --format html
-```
-
-### Batch Processing
-```bash
-node dist/cli/index.js batch /path/to/projects --concurrency 4
+node dist/cli/index.js batch /diretorio/com/varios/projetos --concurrency 2 -o resultados/
 ```
 
 ---
 
-## ✨ Why Hawkeye?
+## 📜 Design original (V2.1)
 
-**80-90% of CVE alerts are false positives.** Traditional SCA tools alert on every dependency version mismatch,
-regardless of whether your code actually uses the vulnerable function.
+> As seções abaixo descrevem o design e o roadmap originais. Para o que funciona hoje, veja
+> [Como funciona](#-como-funciona) e [Limitações](#-limitações-atuais).
 
-Hawkeye answers: **"Is this CVE actually reachable in MY code?"**
-
-**Result:** Reduce noise, focus on real risks, and ship faster with confidence.
-
----
-
-## 🎯 O Problema
-
-### Scanners SCA Tradicionais: "Versão = Risco"
-
-Ferramentas SCA (Software Composition Analysis) fazem apenas **matching de versões**:
-- ✅ **Detectam:** Você tem `axios@1.3.5` e existe CVE-2023-XXXX em `axios < 1.4.0`
-- ❌ **Não validam:** Se seu código usa a função vulnerável
-- ❌ **Não verificam:** Se o código pode alcançar aquele ponto vulnerável
-
-Elas então correlacionam EPSS (Exploit Prediction Scoring System) + KEV (Known Exploited Vulnerabilities) para calcular criticidade. **Resultado: 80-90% falsos positivos**—vulnerabilidades que nunca vão impactar você.
-
-**Consequência:** Seu time gasta horas auditando vulnerabilidades que não são exploráveis, ou deprioritiza as que realmente importam.
-
-### Hawkeye: Análise de Reachability (Alcançabilidade)
-
-VRA responde: **"Essa vulnerabilidade é realmente alcançável no MEU código?"**
-
-**Exemplo Real:**
-```javascript
-// seu-app/src/api.js
-import axios from 'axios'; // CVE-2023-XXXX em axios < 1.4.0
-
-export function fetchPublicData(url) {
-  // Usa apenas axios.get() com URLs pré-validadas
-  if (!isValidApiUrl(url)) throw new Error('URL inválida');
-  return axios.get(url); // GET é seguro, vulnerability está em POST com forma-data
-}
-
-// Vulnerabilidade: axios POST com FormData não escapava corretamente
-// Seu código: Apenas usa GET, nunca usa POST nem FormData
-```
-
-| Ferramenta | Resultado | Confiabilidade |
-|-----------|-----------|-----------------|
-| **Scanner SCA** | ⚠️ VULNERÁVEL (CVE-2023-XXXX) | ~30% (falso positivo) |
-| **VRA** | ✅ NÃO ALCANÇÁVEL | 99% (função vulnerável nunca é chamada) |
-
----
-
-## 📈 Por que Reachability Importa?
-
-### O Ciclo Atual (Sem Reachability)
-```
-1. Scanner SCA descobre: "lodash@4.15.0 tem CVE-YYYY"
-2. EPSS score: 8.5/10 (Exploit fácil)
-3. KEV check: Sim, está sendo explorada "in the wild"
-4. Resultado: 🔴 CRÍTICA (deve corrigir HOJE)
-
-❌ Problema: Seu código NÃO usa a função vulnerável
-❌ Resultado: 2 horas de testes e deployment para nada
-```
-
-### Com Hawkeye (Análise de Reachability)
-```
-1. Scanner SCA descobre: "lodash@4.15.0 tem CVE-YYYY"
-2. VRA analisa: Essa função vulnerável é usada?
-   → Nível 1: Importação? ✅ Sim
-   → Nível 2: Função alcançável? ❌ Não
-   → Nível 3: Taint-reachable? ❌ Não
-3. Resultado: 🟢 IGNORAR (falso positivo)
-
-✅ Economia: 2 horas de work desnecessário
-✅ Foco: Priorizar vulnerabilidades reais
-```
-
-### Impacto de Remediação: MAJOR vs MINOR
-
-**MINOR** (Atualizar versão)
-```json
-{
-  "type": "MINOR",
-  "required_version": ">=4.17.1",
-  "changes_needed": ["npm install express@4.17.1"],
-  "breaking_changes": false,
-  "effort": "5 minutos"
-}
-```
-
-**MAJOR** (Refatoração de código)
-```json
-{
-  "type": "MAJOR",
-  "required_version": ">=5.0.0",
-  "breaking_changes": true,
-  "changes_needed": [
-    "Remover _.assign() e usar Object.assign()",
-    "Atualizar src/handlers/auth.js:45",
-    "Remover compatibilidade com legacy lodash plugins",
-    "Adicionar testes para nova implementação"
-  ],
-  "affected_files": 7,
-  "effort": "2-4 horas"
-}
-```
-
----
-
-## ⚡ Features V2.2
-
-### 🎯 Core Analysis
-- ✅ **Level 1 Analysis**: Import detection
-- ✅ **Level 2 Analysis**: Call graph reachability
-- ✅ **Level 3 Analysis**: Data flow & taint tracking (planned)
-- ✅ **Multi-language**: JavaScript/TypeScript, Python, Java (planned)
-
-### 🔐 Security Context
-- ✅ **Kubernetes NetworkPolicy** extraction and analysis
-- ✅ **Terraform** security group and WAF parsing
-- ✅ **AWS exposure** detection (internet-facing/isolated)
-- ✅ **Network isolation** scoring
-- ✅ **Compliance tags** (PCI-DSS, HIPAA, GDPR, SOC2, ISO27001)
-
-### 📊 Risk Intelligence
-- ✅ **Risk Rescoring**: 1.5x multiplier for internet-facing apps
-- ✅ **CISA KEV** integration: Known exploited vulnerabilities
-- ✅ **FIRST EPSS**: Exploit prediction scoring
-- ✅ **Confidence scoring**: 0-100% certainty on reachability
-
-### 🚀 Deployment
-- ✅ **HTTP API Server**: Production-ready with health checks
-- ✅ **Docker Support**: Containerized deployment
-- ✅ **Batch Processing**: Concurrent multi-project analysis
-- ✅ **CI/CD Ready**: GitHub Actions, GitLab CI, Azure Pipelines
-- ✅ **SARIF Export**: IDE and tool integration
-
-### 💾 Performance
-- ✅ **Persistent Cache**: SQLite/JSON with TTL
-- ✅ **~80% faster** on 2nd run with cache hit
-- ✅ **Concurrency Control**: Configurable pool size
-- ✅ **Incremental Analysis**: Rebuild only changed files
-
-### 📄 Reports
-- ✅ **HTML Report**: Professional design with exposure badges
-- ✅ **SARIF Format**: Standard analysis interchange format
-- ✅ **JSON Export**: Programmatic access
-- ✅ **Risk scores**: Original vs. adjusted (context-aware)
-
-### 🔌 Integrations
-- ✅ **GitHub Actions** workflow template
-- ✅ **GitLab CI** pipeline template
-- ✅ **Azure Pipelines** YAML template
-- ✅ **REST API**: Full programmatic access
-- ✅ **YAML/JSON** context files
-
----
-
-## ✨ Características V2.1
+### Características V2.1
 
 ### ⭐ NOVO: CVE Enrichment Completo
 

@@ -31,16 +31,15 @@ export const batchCommand = {
         type: 'string',
         description: 'Output directory for results',
       })
-      .option('concurrency', {
-        type: 'number',
-        default: 4,
-        description: 'Maximum concurrent analyses',
-      })
-      .option('verbose', {
-        alias: 'v',
+      .option('include-dev', {
         type: 'boolean',
         default: false,
-        description: 'Verbose output',
+        description: 'Also report vulnerabilities in dev-only dependencies',
+      })
+      .option('concurrency', {
+        type: 'number',
+        default: 2,
+        description: 'Maximum concurrent analyses',
       });
   },
 
@@ -56,8 +55,11 @@ export const batchCommand = {
         `🔍 Starting batch analysis of: ${options.directory}\n`,
       );
 
-      const processor = new BatchProcessor(options.concurrency || 4);
-      processor.addJobsFromDirectory(options.directory);
+      const processor = new BatchProcessor(options.concurrency || 2);
+      processor.addJobsFromDirectory(options.directory, {
+        level: (options.level as 1 | 2 | 3) || 2,
+        includeDev: argv['include-dev'],
+      });
 
       const result = await processor.process();
 
@@ -74,8 +76,9 @@ export const batchCommand = {
           project: name,
           success: !(data instanceof Error),
           error: data instanceof Error ? data.message : undefined,
-          risk_score:
-            !(data instanceof Error) ? data.overall_risk_score : undefined,
+          risk_score: !(data instanceof Error) ? data.overall_risk_score : undefined,
+          vulnerabilities: !(data instanceof Error) ? data.total_vulnerabilities : undefined,
+          reachable: !(data instanceof Error) ? data.reachable_vulnerabilities : undefined,
         })),
       };
 
@@ -98,7 +101,7 @@ export const batchCommand = {
       process.stderr.write(
         `❌ Batch processing failed: ${(error as Error).message}\n`,
       );
-      process.exit(1);
+      process.exitCode = 1;
     }
   },
 };

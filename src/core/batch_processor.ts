@@ -1,4 +1,5 @@
 import { AnalysisEngine } from './analysis_engine.js';
+import { mapLimit } from './http.js';
 import { AnalysisResult } from '../types/analysis-result.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -6,7 +7,7 @@ import * as path from 'path';
 export interface BatchJob {
   projectPath: string;
   level?: 1 | 2 | 3;
-  language?: string;
+  includeDev?: boolean;
   outputFile?: string;
 }
 
@@ -40,7 +41,7 @@ export class BatchProcessor {
   /**
    * Add jobs from a directory
    */
-  addJobsFromDirectory(basePath: string): void {
+  addJobsFromDirectory(basePath: string, defaults: Omit<BatchJob, 'projectPath'> = {}): void {
     try {
       const entries = fs.readdirSync(basePath);
 
@@ -51,10 +52,7 @@ export class BatchProcessor {
         if (stat.isDirectory()) {
           // Check if it's a valid project (has package.json)
           if (fs.existsSync(path.join(fullPath, 'package.json'))) {
-            this.addJob({
-              projectPath: fullPath,
-              level: 2,
-            });
+            this.addJob({ level: 2, ...defaults, projectPath: fullPath });
           }
         }
       }
@@ -72,32 +70,8 @@ export class BatchProcessor {
     let successfulAnalysis = 0;
     let totalRiskScore = 0;
 
-    console.log(`\n🚀 Starting batch processing: ${this.jobs.length} projects`);
-    console.log(`📊 Max concurrent: ${this.maxConcurrent}\n`);
-
-    // Process jobs with concurrency control
-    const queue = [...this.jobs];
-    const active: Promise<void>[] = [];
-
-    while (queue.length > 0 || active.length > 0) {
-      // Start new jobs if under limit
-      while (active.length < this.maxConcurrent && queue.length > 0) {
-        const job = queue.shift()!;
-        const promise = this.processJob(job, results);
-        active.push(promise);
-      }
-
-      // Wait for at least one to complete
-      if (active.length > 0) {
-        await Promise.race(active);
-        // Remove completed promises
-        for (let i = active.length - 1; i >= 0; i--) {
-          if ((active[i] as any).resolved) {
-            active.splice(i, 1);
-          }
-        }
-      }
-    }
+    process.stderr.write(`🚀 Batch: ${this.jobs.length} projects, ${this.maxConcurrent} at a time\n`);
+    await mapLimit(this.jobs, this.maxConcurrent, job => this.processJob(job, results));
 
     // Calculate statistics
     for (const result of results.values()) {
@@ -132,12 +106,12 @@ export class BatchProcessor {
     const startTime = Date.now();
 
     try {
-      console.log(`⏳ Analyzing: ${projectName}`);
+      process.stderr.write(`⏳ Analyzing: ${projectName}\n`);
 
       const engine = new AnalysisEngine({
         projectPath: job.projectPath,
         level: job.level || 2,
-        language: job.language,
+        includeDev: job.includeDev,
       });
 
       const result = await engine.analyze();
@@ -152,10 +126,10 @@ export class BatchProcessor {
       }
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-      console.log(`✅ Completed: ${projectName} (${duration}s)`);
+      process.stderr.write(`✅ Completed: ${projectName} (${duration}s)\n`);
     } catch (error) {
       results.set(projectName, error as Error);
-      console.error(`❌ Failed: ${projectName} - ${(error as Error).message}`);
+      process.stderr.write(`❌ Failed: ${projectName} - ${(error as Error).message}\n`);
     }
   }
 

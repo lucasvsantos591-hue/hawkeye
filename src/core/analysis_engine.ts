@@ -1,248 +1,305 @@
-import { ManifestReader, ProjectManifest } from './manifest_reader.js';
-import { VulnerabilityMatcher, VulnerabilityMatch, CVE } from './vuln_matcher.js';
-import { ReachabilityAnalyzer } from './reachability.js';
-import { CacheManager } from './cache_manager.js';
-import { VulnerabilityEnricher } from './enrichment_pool.js';
-import {
-  VulnerabilityFinding,
-  AnalysisResult,
-} from '../types/analysis-result.js';
 import * as path from 'path';
+import semver from 'semver';
+import { readDependencyInventory, type InstalledPackage } from './dependency_inventory.js';
+import { buildImportIndex, type ImportIndex, type PackageUsage } from './import_index.js';
+import { CacheManager, defaultCacheDir } from './cache_manager.js';
+import { lookupThreatIntel } from './threat_intel.js';
+import { OsvSource, type Advisory } from '../adapters/vulnerability_sources/osv_source.js';
+import type {
+  AnalysisResult,
+  Remediation,
+  Severity,
+  VulnerabilityFinding,
+} from '../types/analysis-result.js';
+
+export const TOOL_VERSION = '0.2.0';
 
 export interface AnalysisEngineOptions {
   projectPath: string;
   level?: 1 | 2 | 3;
   language?: string;
+  includeDev?: boolean;
+  /** Cache directory for remote data; `null` disables the cache. */
+  cacheDir?: string | null;
+  onProgress?: (message: string) => void;
 }
 
+interface Reachability {
+  isReachable: boolean;
+  level: 1 | 2;
+  confidence: number;
+  reason: string;
+  usage?: PackageUsage;
+  via?: string;
+}
+
+const SEVERITY_ORDER: Record<Severity, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+
 export class AnalysisEngine {
-  private options: Required<AnalysisEngineOptions>;
-  private manifest!: ProjectManifest;
-  private vulnMatcher: VulnerabilityMatcher;
-  private reachabilityAnalyzer!: ReachabilityAnalyzer;
-  private cache: CacheManager;
+  private readonly projectPath: string;
+  private readonly level: 1 | 2 | 3;
+  private readonly includeDev: boolean;
+  private readonly cacheDir: string | null;
+  private readonly progress: (message: string) => void;
 
   constructor(options: AnalysisEngineOptions) {
-    this.options = {
-      projectPath: options.projectPath,
-      level: options.level || 2,
-      language: options.language || 'javascript',
-    };
-
-    this.vulnMatcher = new VulnerabilityMatcher();
-    this.cache = new CacheManager(path.join(options.projectPath, '.hawkeye-cache'));
+    this.projectPath = path.resolve(options.projectPath);
+    this.level = options.level ?? 2;
+    this.includeDev = options.includeDev ?? false;
+    this.cacheDir = options.cacheDir === undefined ? defaultCacheDir() : options.cacheDir;
+    this.progress = options.onProgress ?? (() => {});
   }
 
-  /**
-   * Run the complete analysis pipeline
-   */
   async analyze(): Promise<AnalysisResult> {
-    try {
-      // Step 1: Read project manifest
-      this.manifest = ManifestReader.readProjectManifest(this.options.projectPath);
-
-      // Step 1.5: Check cache for complete result (if lockfile exists)
-      if (this.manifest.lockfilePath) {
-        const lockfileHash = CacheManager.hashFile(this.manifest.lockfilePath);
-        const cacheKey = CacheManager.resultCacheKey(lockfileHash, this.options.level);
-        const cachedResult = this.cache.get<AnalysisResult>(cacheKey);
-
-        if (cachedResult) {
-          console.error(`♻️ Cache hit! Using cached results`);
-          this.cache.saveToDisk();
-          return cachedResult;
-        }
-      }
-
-      // Step 2: Load CVE database (for now, using mock data)
-      this.loadMockCveDatabase();
-
-      // Step 3: Match dependencies against CVEs
-      const vulnMatches = this.vulnMatcher.matchDependencies(this.manifest.dependencies);
-
-      // Step 4: Analyze reachability based on level
-      this.reachabilityAnalyzer = new ReachabilityAnalyzer(this.options.projectPath);
-      let findings = await this.analyzeReachability(vulnMatches);
-
-      // Step 4.5: Enrich findings with EPSS scores and KEV status
-      console.error(`⏳ Enriching findings with EPSS scores and KEV status...`);
-      const enricher = new VulnerabilityEnricher();
-      findings = await enricher.enrichFindings(findings);
-      await enricher.drain();
-
-      // Step 5: Build analysis result
-      const result = this.buildAnalysisResult(findings);
-
-      // Step 6: Cache the result
-      if (this.manifest.lockfilePath) {
-        const lockfileHash = CacheManager.hashFile(this.manifest.lockfilePath);
-        const cacheKey = CacheManager.resultCacheKey(lockfileHash, this.options.level);
-        this.cache.set(cacheKey, result, 24 * 60 * 60 * 1000); // 24 hour TTL
-      }
-
-      // Save cache to disk for next run
-      this.cache.saveToDisk();
-      this.cache.getStats();
-
-      return result;
-    } catch (error) {
-      throw new Error(`Analysis failed: ${(error as Error).message}`);
+    const warnings: string[] = [];
+    if (this.level === 3) {
+      warnings.push('Level 3 (data-flow) is not implemented yet; results use level 2 (usage) analysis.');
     }
-  }
 
-  /**
-   * Analyze reachability for vulnerable dependencies
-   */
-  private async analyzeReachability(matches: VulnerabilityMatch[]): Promise<VulnerabilityFinding[]> {
+    const inventory = readDependencyInventory(this.projectPath);
+    warnings.push(...inventory.warnings);
+    const packages = inventory.packages.filter(p => this.includeDev || !p.dev);
+    this.progress(
+      `📦 ${packages.length} installed packages from ${inventory.source}` +
+        (this.includeDev ? '' : ` (${inventory.packages.length - packages.length} dev-only skipped)`),
+    );
+
+    const cache = new CacheManager(this.cacheDir);
+    this.progress('🔎 Querying OSV.dev advisories...');
+    const advisories = await new OsvSource(cache).findAdvisories(packages);
+
+    this.progress('🧭 Indexing imports in project source...');
+    const index = buildImportIndex(this.projectPath);
+    if (index.parseErrors.length) {
+      warnings.push(`${index.parseErrors.length} source files could not be parsed (e.g. ${index.parseErrors[0]})`);
+    }
+
     const findings: VulnerabilityFinding[] = [];
-
-    for (const match of matches) {
-      if (!match.hasVulnerabilities) {
-        continue;
-      }
-
-      for (const cve of match.vulnerabilities) {
-        let isReachable = false;
-        let reachabilityLevel: 1 | 2 | 3 = 1;
-        let callChain: VulnerabilityFinding['call_chain'];
-
-        // Level 1: Check if package is imported
-        if (this.options.level >= 1) {
-          const level1 = await this.reachabilityAnalyzer.analyzeLevel1(cve.package_name);
-          isReachable = level1.level1IsReachable;
-          reachabilityLevel = 1;
-
-          if (isReachable && level1.importPaths.length > 0) {
-            callChain = {
-              entry_point: 'src/index.ts',
-              path: level1.importPaths,
-            };
-          }
-        }
-
-        // Level 2: Check if vulnerable function is called
-        if (this.options.level >= 2 && isReachable) {
-          const level2 = await this.reachabilityAnalyzer.analyzeLevel2(
-            cve.package_name,
-            'vulnerableFunction',
-            'src/index.ts',
-          );
-          isReachable = level2.level2IsReachable;
-          reachabilityLevel = 2;
-
-          if (level2.callChain) {
-            callChain = {
-              entry_point: 'src/index.ts',
-              path: level2.callChain,
-            };
-          }
-        }
-
-        // Create finding
-        findings.push({
-          vulnerability: {
-            cve_id: cve.cve_id,
-            package: cve.package_name,
-            current_version: match.dependency.version,
-            affected_versions: cve.affected_versions,
-            severity: cve.severity,
-          },
-          is_reachable: isReachable,
-          reachability_level: reachabilityLevel,
-          confidence: isReachable ? 75 : 100,
-          call_chain: callChain,
-          reason: !isReachable ? 'Package imported but vulnerable function not called' : undefined,
-          remediation: {
-            type: 'MINOR',
-            description: `Update ${cve.package_name} to a patched version`,
-            required_version: '>=1.0.0', // Should come from CVE data
-            breaking_changes: false,
-            action: `npm install ${cve.package_name}@latest`,
-          },
-        });
-      }
+    for (const pkg of packages) {
+      const pkgAdvisories = advisories.get(`${pkg.name}@${pkg.version}`);
+      if (!pkgAdvisories) continue;
+      const reach = this.reachability(pkg, index);
+      for (const advisory of pkgAdvisories) findings.push(buildFinding(pkg, advisory, reach));
     }
 
-    return findings;
-  }
+    this.progress(`🌐 Enriching ${findings.length} findings with EPSS and CISA KEV...`);
+    const intel = await lookupThreatIntel(findings.map(f => f.vulnerability.cve_id), cache);
+    warnings.push(...intel.warnings);
+    for (const finding of findings) {
+      const epss = intel.epss.get(finding.vulnerability.cve_id);
+      if (epss) {
+        finding.vulnerability.epss_score = epss.score;
+        finding.vulnerability.epss_percentile = epss.percentile;
+      }
+      finding.vulnerability.is_exploited_in_wild = intel.kev.has(finding.vulnerability.cve_id);
+    }
+    cache.save();
 
-  /**
-   * Build final analysis result
-   */
-  private buildAnalysisResult(findings: VulnerabilityFinding[]): AnalysisResult {
-    const reachableFindings = findings.filter(f => f.is_reachable);
+    findings.sort(compareFindings);
+    const reachable = findings.filter(f => f.is_reachable);
 
     return {
-      schema_version: '1.0.0',
+      schema_version: '1.1.0',
       generated_at: new Date().toISOString(),
-      project_name: path.basename(this.options.projectPath),
-      project_path: this.options.projectPath,
+      project_name: path.basename(this.projectPath),
+      project_path: this.projectPath,
       total_vulnerabilities: findings.length,
-      reachable_vulnerabilities: reachableFindings.length,
-      overall_risk_score: this.calculateRiskScore(reachableFindings),
+      reachable_vulnerabilities: reachable.length,
+      overall_risk_score: riskScore(reachable),
       summary: {
-        critical_reachable: reachableFindings.filter(f => f.vulnerability.severity === 'CRITICAL').length,
-        high_reachable: reachableFindings.filter(f => f.vulnerability.severity === 'HIGH').length,
-        medium_reachable: reachableFindings.filter(f => f.vulnerability.severity === 'MEDIUM').length,
-        false_positives_filtered: findings.length - reachableFindings.length,
+        critical_reachable: reachable.filter(f => f.vulnerability.severity === 'CRITICAL').length,
+        high_reachable: reachable.filter(f => f.vulnerability.severity === 'HIGH').length,
+        medium_reachable: reachable.filter(f => f.vulnerability.severity === 'MEDIUM').length,
+        false_positives_filtered: findings.length - reachable.length,
       },
       results: findings,
+      scan: {
+        tool_version: TOOL_VERSION,
+        vulnerability_source: 'OSV.dev (GitHub Advisory Database, npm)',
+        dependency_source: inventory.source,
+        packages_scanned: packages.length,
+        files_scanned: index.filesScanned,
+        include_dev: this.includeDev,
+        warnings,
+      },
     };
   }
 
-  /**
-   * Calculate overall risk score based on findings
-   */
-  private calculateRiskScore(findings: VulnerabilityFinding[]): number {
-    if (findings.length === 0) {
-      return 0;
+  private reachability(pkg: InstalledPackage, index: ImportIndex): Reachability {
+    if (pkg.direct) return this.directReachability(pkg.name, index);
+
+    if (pkg.via.length === 0) {
+      return {
+        isReachable: true,
+        level: 1,
+        confidence: 30,
+        reason: 'Transitive dependency; could not resolve which direct dependency pulls it in, so it is treated as reachable.',
+      };
     }
-
-    const severityScores: Record<string, number> = {
-      CRITICAL: 100,
-      HIGH: 75,
-      MEDIUM: 50,
-      LOW: 25,
+    const viaResults = pkg.via.map(name => ({ name, reach: this.directReachability(name, index) }));
+    const hit = viaResults.find(v => v.reach.isReachable);
+    if (hit) {
+      return {
+        ...hit.reach,
+        confidence: Math.min(hit.reach.confidence, 60),
+        via: hit.name,
+        reason:
+          `Transitive dependency of ${hit.name}, which your code uses. ` +
+          'Whether the vulnerable code path inside it is exercised is not verified.',
+      };
+    }
+    return {
+      isReachable: false,
+      level: 1,
+      confidence: 60,
+      reason: `Transitive dependency pulled in only by ${pkg.via.join(', ')}, none of which is imported by project source.`,
     };
-
-    const totalScore = findings.reduce((sum, finding) => {
-      const severityScore = severityScores[finding.vulnerability.severity] || 0;
-      const confidenceMultiplier = finding.confidence / 100;
-      return sum + (severityScore * confidenceMultiplier);
-    }, 0);
-
-    return Math.min(100, Math.round(totalScore / findings.length));
   }
 
-  /**
-   * Load mock CVE database (for now)
-   * In production, this would fetch from NVD API or cache
-   */
-  private loadMockCveDatabase(): void {
-    const mockCves: CVE[] = [
-      {
-        cve_id: 'CVE-2023-12345',
-        package_name: 'axios',
-        affected_versions: ['<1.4.0'],
-        severity: 'HIGH',
-        description: 'Prototype pollution vulnerability in axios',
-      },
-      {
-        cve_id: 'CVE-2023-54321',
-        package_name: 'lodash',
-        affected_versions: ['<4.17.21'],
-        severity: 'CRITICAL',
-        description: 'Arbitrary code execution in lodash',
-      },
-      {
-        cve_id: 'CVE-2022-99999',
-        package_name: 'express',
-        affected_versions: ['<4.18.0'],
-        severity: 'MEDIUM',
-        description: 'DoS vulnerability in express',
-      },
-    ];
-
-    this.vulnMatcher.setCveDatabase(mockCves);
+  private directReachability(name: string, index: ImportIndex): Reachability {
+    const usage = index.get(name);
+    if (!usage || (usage.files.length === 0 && usage.testFiles.length === 0)) {
+      return {
+        isReachable: false,
+        level: 1,
+        confidence: 70,
+        reason:
+          'Declared dependency but never imported in project source. It may still be loaded indirectly ' +
+          '(framework plugin, config string, CLI script).',
+      };
+    }
+    if (usage.files.length === 0) {
+      return {
+        isReachable: false,
+        level: 1,
+        confidence: 80,
+        usage,
+        reason: `Only imported from test files (${usage.testFiles.slice(0, 3).join(', ')}).`,
+      };
+    }
+    if (usage.typeOnly) {
+      return {
+        isReachable: false,
+        level: 1,
+        confidence: 90,
+        usage,
+        reason: 'Only type imports, which are erased at compile time.',
+      };
+    }
+    if (this.level === 1) {
+      return { isReachable: true, level: 1, confidence: 60, usage, reason: `Imported in ${usage.files.length} file(s).` };
+    }
+    if (!usage.used) {
+      return {
+        isReachable: false,
+        level: 2,
+        confidence: 70,
+        usage,
+        reason: 'Imported, but the imported bindings are never referenced.',
+      };
+    }
+    const members = usage.members.length ? ` Uses: ${usage.members.slice(0, 8).join(', ')}.` : '';
+    return {
+      isReachable: true,
+      level: 2,
+      confidence: 80,
+      usage,
+      reason: `Used in ${usage.files.length} file(s).${members}`,
+    };
   }
+}
+
+function buildFinding(pkg: InstalledPackage, advisory: Advisory, reach: Reachability): VulnerabilityFinding {
+  const usage = reach.usage;
+  return {
+    vulnerability: {
+      cve_id: advisory.cve_id,
+      advisory_id: advisory.id,
+      aliases: advisory.aliases,
+      summary: advisory.summary,
+      advisory_url: advisory.url,
+      package: pkg.name,
+      current_version: pkg.version,
+      affected_versions: advisory.affected_ranges,
+      fixed_version: advisory.fixed_version,
+      severity: advisory.severity,
+      cvss_vector: advisory.cvss_vector,
+      dependency_type: pkg.direct ? 'direct' : 'transitive',
+      introduced_via: pkg.via,
+      is_dev: pkg.dev,
+    },
+    is_reachable: reach.isReachable,
+    reachability_level: reach.level,
+    confidence: reach.confidence,
+    call_chain:
+      reach.isReachable && usage?.sites.length
+        ? { entry_point: usage.sites[0], path: reach.via ? [reach.via, pkg.name] : [pkg.name] }
+        : undefined,
+    reason: reach.reason,
+    evidence: usage ? { files: usage.files.slice(0, 20), members: usage.members, sites: usage.sites } : undefined,
+    remediation: remediation(pkg, advisory),
+  };
+}
+
+function remediation(pkg: InstalledPackage, advisory: Advisory): Remediation {
+  if (advisory.malicious) {
+    return {
+      type: 'MAJOR',
+      description: `${pkg.name}@${pkg.version} is a known malicious package. Remove it and rotate any secrets exposed to the environment.`,
+      action: pkg.direct ? `npm uninstall ${pkg.name}` : `Remove the dependency that pulls in ${pkg.name} (${pkg.via.join(', ')})`,
+    };
+  }
+  const fixed = advisory.fixed_version;
+  if (!fixed) {
+    return {
+      type: 'MAJOR',
+      description: `No patched version of ${pkg.name} is published for this advisory. Consider replacing the package or mitigating the affected feature.`,
+    };
+  }
+  const major = safeMajor(fixed) > safeMajor(pkg.version);
+  if (pkg.direct) {
+    return {
+      type: major ? 'MAJOR' : 'MINOR',
+      description: `Upgrade ${pkg.name} from ${pkg.version} to ${fixed} or later.`,
+      required_version: `>=${fixed}`,
+      breaking_changes: major,
+      action: `npm install ${pkg.name}@^${fixed}`,
+    };
+  }
+  return {
+    type: major ? 'MAJOR' : 'MINOR',
+    description:
+      `${pkg.name}@${pkg.version} comes in through ${pkg.via.join(', ') || 'another dependency'}. ` +
+      `Upgrade that dependency to a release that requires ${pkg.name}>=${fixed}, or force it with an override.`,
+    required_version: `>=${fixed}`,
+    breaking_changes: major,
+    action: `npm pkg set overrides.${pkg.name}=^${fixed} && npm install`,
+  };
+}
+
+function safeMajor(version: string): number {
+  return semver.valid(version) ? semver.major(version) : 0;
+}
+
+function compareFindings(a: VulnerabilityFinding, b: VulnerabilityFinding): number {
+  return (
+    Number(b.is_reachable) - Number(a.is_reachable) ||
+    Number(!!b.vulnerability.is_exploited_in_wild) - Number(!!a.vulnerability.is_exploited_in_wild) ||
+    SEVERITY_ORDER[b.vulnerability.severity] - SEVERITY_ORDER[a.vulnerability.severity] ||
+    (b.vulnerability.epss_score ?? 0) - (a.vulnerability.epss_score ?? 0) ||
+    a.vulnerability.package.localeCompare(b.vulnerability.package)
+  );
+}
+
+function riskScore(reachable: VulnerabilityFinding[]): number {
+  if (reachable.length === 0) return 0;
+  const base: Record<Severity, number> = { CRITICAL: 90, HIGH: 70, MEDIUM: 45, LOW: 20 };
+  const worst = Math.max(
+    ...reachable.map(f => {
+      const kev = f.vulnerability.is_exploited_in_wild ? 10 : 0;
+      const epss = Math.round(((f.vulnerability.epss_score ?? 0) / 100) * 10);
+      return base[f.vulnerability.severity] + kev + epss;
+    }),
+  );
+  return Math.min(100, worst);
 }

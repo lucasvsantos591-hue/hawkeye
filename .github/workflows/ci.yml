@@ -30,7 +30,22 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run tests
-        run: npm test -- --run
+        run: npm test
 
       - name: Build
         run: npm run build
+
+      - name: Smoke test CLI on fixture project
+        run: node dist/cli/index.js analyze tests/fixtures/lockfiles/npm --no-cache -o /tmp/out.json && node -e "JSON.parse(require('fs').readFileSync('/tmp/out.json','utf8'))"
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t hawkeye:ci .
+      - name: Start API and check health
+        run: |
+          docker run -d --name hawkeye -p 3000:3000 -e HAWKEYE_API_TOKEN=ci-token hawkeye:ci
+          for i in $(seq 1 20); do curl -fs localhost:3000/api/health && exit 0; sleep 1; done
+          docker logs hawkeye; exit 1

@@ -1,40 +1,27 @@
 import { Argv } from 'yargs';
 import * as fs from 'fs';
 import { AnalysisEngine } from '../../core/analysis_engine.js';
+import { SARIFRenderer } from '../../adapters/report/sarif_renderer.js';
+import { HTMLReportRenderer } from '../../adapters/report/html_renderer.js';
+import { ContextLoader } from '../../adapters/context/context_loader.js';
+import type { AnalysisResult, Severity } from '../../types/analysis-result.js';
 
-export interface AnalyzeOptions {
-  path: string;
-  language?: string;
-  level?: number;
-  format?: 'json' | 'html' | 'sarif';
-  output?: string;
-  cache?: string;
-  verbose?: boolean;
-  debug?: boolean;
-  'detect-exposure'?: boolean;
-  context?: string;
-}
+const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
 export const analyzeCommand = {
   command: 'analyze <path>',
-  description: 'Analyze a project for reachable vulnerabilities',
+  description: 'Analyze a JavaScript/TypeScript project for reachable vulnerable dependencies',
   builder: (yargs: Argv) => {
     return yargs
       .positional('path', {
-        describe: 'Path to project directory',
+        describe: 'Path to project directory (must contain package.json)',
         type: 'string',
-      })
-      .option('language', {
-        alias: 'l',
-        type: 'string',
-        choices: ['javascript', 'typescript', 'python', 'java', 'go', 'rust'],
-        description: 'Programming language (auto-detect if not specified)',
       })
       .option('level', {
         type: 'number',
         choices: [1, 2, 3],
         default: 2,
-        description: 'Reachability analysis level (1=imports, 2=calls, 3=data-flow)',
+        description: 'Reachability level (1=imported, 2=imported bindings are used; 3 falls back to 2)',
       })
       .option('format', {
         alias: 'f',
@@ -46,62 +33,78 @@ export const analyzeCommand = {
       .option('output', {
         alias: 'o',
         type: 'string',
-        description: 'Output file path (default: stdout)',
+        description: 'Write output to this file instead of stdout',
+      })
+      .option('include-dev', {
+        type: 'boolean',
+        default: false,
+        description: 'Also report vulnerabilities in dev-only dependencies',
       })
       .option('cache', {
         type: 'string',
-        default: './.vra-cache',
-        description: 'Cache directory for vulnerabilities',
+        description: 'Cache directory for advisory data (default: ~/.cache/hawkeye; --no-cache disables)',
       })
-      .option('detect-exposure', {
-        type: 'boolean',
-        default: false,
-        description: 'Detect internet-facing exposure (DNS, SSL, HTTP)',
-      })
-      .option('context', {
+      .option('fail-on', {
         type: 'string',
-        description: 'Path to Hawkeye context file (JSON/YAML)',
+        choices: ['low', 'medium', 'high', 'critical'],
+        description: 'Exit with code 2 if a reachable finding at or above this severity exists',
       });
   },
 
   handler: async (argv: any) => {
-    const options: AnalyzeOptions = argv as AnalyzeOptions;
+    const projectPath: string = argv.path;
+    const log = (message: string) => process.stderr.write(`${message}\n`);
 
     try {
-      // Validate path
-      if (!fs.existsSync(options.path)) {
-        throw new Error(`Project path not found: ${options.path}`);
+      if (!fs.existsSync(projectPath)) {
+        throw new Error(`Project path not found: ${projectPath}`);
       }
+      log(`📁 Analyzing ${projectPath} (level ${argv.level})`);
 
-      // Status messages go to stderr
-      process.stderr.write(`📁 Analyzing project: ${options.path}\n`);
-      process.stderr.write(`🔍 Reachability level: ${options.level}\n`);
-
-      // Run actual analysis
       const engine = new AnalysisEngine({
-        projectPath: options.path,
-        level: (options.level as 1 | 2 | 3) || 2,
-        language: options.language,
+        projectPath,
+        level: argv.level,
+        includeDev: argv['include-dev'],
+        cacheDir: argv.cache === false ? null : argv.cache,
+        onProgress: log,
       });
-
-      process.stderr.write(`⏳ Running analysis...\n`);
       const result = await engine.analyze();
 
-      process.stderr.write(
-        `✅ Analysis complete! Found ${result.total_vulnerabilities} vulnerabilities ` +
-        `(${result.reachable_vulnerabilities} reachable)\n`
+      for (const warning of result.scan?.warnings ?? []) log(`⚠️  ${warning}`);
+      log(
+        `✅ ${result.total_vulnerabilities} vulnerable findings, ${result.reachable_vulnerabilities} reachable ` +
+          `(${result.scan?.packages_scanned} packages, ${result.scan?.files_scanned} source files)`,
       );
 
-      // JSON output goes to stdout (clean, no status messages)
-      console.log(JSON.stringify(result, null, 2));
+      const rendered = render(result, argv.format);
+      if (argv.output) {
+        fs.writeFileSync(argv.output, rendered);
+        log(`📄 Saved to ${argv.output}`);
+      } else {
+        process.stdout.write(rendered.endsWith('\n') ? rendered : `${rendered}\n`);
+      }
 
-      if (options.output) {
-        fs.writeFileSync(options.output, JSON.stringify(result, null, 2));
-        process.stderr.write(`📄 Report saved to: ${options.output}\n`);
+      if (argv['fail-on']) {
+        const threshold = SEVERITIES.indexOf(String(argv['fail-on']).toUpperCase() as Severity);
+        const blocking = result.results.filter(
+          f => f.is_reachable && SEVERITIES.indexOf(f.vulnerability.severity) >= threshold,
+        );
+        if (blocking.length) {
+          log(`❌ ${blocking.length} reachable finding(s) at or above ${argv['fail-on']}`);
+          process.exitCode = 2;
+        }
       }
     } catch (error) {
-      process.stderr.write(`❌ Analysis failed: ${(error as Error).message}\n`);
-      process.exit(1);
+      log(`❌ Analysis failed: ${(error as Error).message}`);
+      process.exitCode = 1;
     }
   },
 };
+
+function render(result: AnalysisResult, format: string): string {
+  if (format === 'sarif') return new SARIFRenderer(result).render();
+  if (format === 'html') {
+    return new HTMLReportRenderer(result, ContextLoader.loadContext(result.project_path ?? '.')).render();
+  }
+  return JSON.stringify(result, null, 2);
+}

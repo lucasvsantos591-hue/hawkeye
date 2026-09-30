@@ -48,3 +48,7 @@ Thumbs.db
 report.html
 report.json
 analysis-results.json
+
+# Hawkeye local cache (older versions wrote it inside projects)
+.hawkeye-cache/
+test-results.txt

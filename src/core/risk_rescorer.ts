@@ -11,6 +11,11 @@ export interface RescoreResult {
   riskLevel: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
+export function findingKey(finding: VulnerabilityFinding): string {
+  const v = finding.vulnerability;
+  return `${v.advisory_id ?? v.cve_id}:${v.package}@${v.current_version}`;
+}
+
 /**
  * Rescores vulnerabilities based on network exposure and context
  * Internet-facing applications have higher risk multipliers
@@ -50,8 +55,7 @@ export class RiskRescorer {
     const results = new Map<string, RescoreResult>();
 
     for (const finding of findings) {
-      const key = `${finding.vulnerability.cve_id}:${finding.vulnerability.package}`;
-      results.set(key, this.rescore(finding));
+      results.set(findingKey(finding), this.rescore(finding));
     }
 
     return results;

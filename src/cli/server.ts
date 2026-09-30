@@ -1,187 +1,152 @@
 #!/usr/bin/env node
 
 import * as http from 'http';
-import * as url from 'url';
 import * as fs from 'fs';
-import { AnalysisEngine } from '../core/analysis_engine.js';
+import * as path from 'path';
+import { timingSafeEqual } from 'crypto';
+import { AnalysisEngine, TOOL_VERSION } from '../core/analysis_engine.js';
 import { HTMLReportRenderer } from '../adapters/report/html_renderer.js';
 import { SARIFRenderer } from '../adapters/report/sarif_renderer.js';
 import { ContextLoader } from '../adapters/context/context_loader.js';
+import { assertAnalysisResult } from '../types/analysis-result.js';
 
-const PORT = process.env.HAWKEYE_PORT ? parseInt(process.env.HAWKEYE_PORT) : 3000;
+const PORT = Number(process.env.HAWKEYE_PORT ?? 3000);
+const HOST = process.env.HAWKEYE_HOST ?? '127.0.0.1';
+const TOKEN = process.env.HAWKEYE_API_TOKEN ?? '';
+const ALLOWED_ROOT = fs.realpathSync(process.env.HAWKEYE_ALLOWED_ROOT ?? process.cwd());
+const CORS_ORIGIN = process.env.HAWKEYE_CORS_ORIGIN ?? '';
+const MAX_BODY = 5 * 1024 * 1024;
+const MAX_CONCURRENT = Number(process.env.HAWKEYE_MAX_CONCURRENCY ?? 2);
+const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
+
+if (!LOOPBACK.has(HOST) && !TOKEN) {
+  process.stderr.write(`Refusing to listen on ${HOST} without HAWKEYE_API_TOKEN set.\n`);
+  process.exit(1);
+}
+
 const startTime = Date.now();
+let running = 0;
 
-/**
- * Simple HTTP API Server for Hawkeye
- */
+class HttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+function send(res: http.ServerResponse, status: number, body: unknown, type = 'application/json') {
+  res.writeHead(status, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff' });
+  res.end(typeof body === 'string' ? body : JSON.stringify(body));
+}
+
+function authorized(req: http.IncomingMessage): boolean {
+  if (!TOKEN) return true;
+  const header = req.headers.authorization ?? '';
+  const given = Buffer.from(header.startsWith('Bearer ') ? header.slice(7) : '');
+  const expected = Buffer.from(TOKEN);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+async function readBody(req: http.IncomingMessage): Promise<any> {
+  let size = 0;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY) throw new HttpError(413, 'Request body too large');
+    chunks.push(chunk as Buffer);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf-8') || '{}');
+  } catch {
+    throw new HttpError(400, 'Body must be valid JSON');
+  }
+}
+
+function resolveProjectPath(input: unknown): string {
+  if (typeof input !== 'string' || !input) throw new HttpError(400, 'projectPath is required');
+  let real: string;
+  try {
+    real = fs.realpathSync(path.resolve(ALLOWED_ROOT, input));
+  } catch {
+    throw new HttpError(400, 'projectPath not found');
+  }
+  if (real !== ALLOWED_ROOT && !real.startsWith(ALLOWED_ROOT + path.sep)) {
+    throw new HttpError(403, 'projectPath is outside HAWKEYE_ALLOWED_ROOT');
+  }
+  return real;
+}
+
 const server = http.createServer(async (req, res) => {
-  const parsedUrl = url.parse(req.url || '', true);
-  const pathname = parsedUrl.pathname || '';
-  const method = req.method || 'GET';
+  const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+  const method = req.method ?? 'GET';
 
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
-    return;
+  if (CORS_ORIGIN) {
+    res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (method === 'OPTIONS') return send(res, 204, '');
   }
 
   try {
-    // Health check
-    if (pathname === '/api/health') {
-      res.setHeader('Content-Type', 'application/json');
-      res.writeHead(200);
-      res.end(
-        JSON.stringify({
-          status: 'ok',
-          version: '1.0.0',
-          uptime: Math.floor((Date.now() - startTime) / 1000),
-          timestamp: new Date().toISOString(),
-        }),
-      );
-      return;
+    if (pathname === '/api/health' && method === 'GET') {
+      return send(res, 200, {
+        status: 'ok',
+        version: TOOL_VERSION,
+        uptime: Math.floor((Date.now() - startTime) / 1000),
+        busy: running,
+      });
     }
 
-    // Analyze endpoint
+    if (!authorized(req)) throw new HttpError(401, 'Missing or invalid bearer token');
+
     if (pathname === '/api/analyze' && method === 'POST') {
-      let body = '';
-
-      req.on('data', chunk => {
-        body += chunk.toString();
-      });
-
-      req.on('end', async () => {
-        try {
-          const data = JSON.parse(body);
-          const projectPath = data.projectPath || '.';
-          const level = data.level || 2;
-
-          if (!fs.existsSync(projectPath)) {
-            res.setHeader('Content-Type', 'application/json');
-            res.writeHead(400);
-            res.end(
-              JSON.stringify({
-                error: 'Project path not found',
-                projectPath,
-              }),
-            );
-            return;
-          }
-
-          const engine = new AnalysisEngine({
-            projectPath,
-            level,
-            language: data.language,
-          });
-
-          const result = await engine.analyze();
-
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(200);
-          res.end(JSON.stringify(result));
-        } catch (error) {
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(500);
-          res.end(
-            JSON.stringify({
-              error: (error as Error).message,
-            }),
-          );
+      const data = await readBody(req);
+      const projectPath = resolveProjectPath(data.projectPath);
+      const level = [1, 2, 3].includes(data.level) ? data.level : 2;
+      if (running >= MAX_CONCURRENT) throw new HttpError(429, 'Too many analyses in progress, retry later');
+      running++;
+      try {
+        const result = await new AnalysisEngine({ projectPath, level, includeDev: data.includeDev === true }).analyze();
+        const format = data.format ?? 'json';
+        if (format === 'sarif') return send(res, 200, new SARIFRenderer(result).render());
+        if (format === 'html') {
+          const html = new HTMLReportRenderer(result, ContextLoader.loadContext(projectPath)).render();
+          return send(res, 200, html, 'text/html; charset=utf-8');
         }
-      });
-      return;
+        return send(res, 200, result);
+      } finally {
+        running--;
+      }
     }
 
-    // Report endpoint
     if (pathname === '/api/report' && method === 'POST') {
-      let body = '';
-
-      req.on('data', chunk => {
-        body += chunk.toString();
-      });
-
-      req.on('end', async () => {
-        try {
-          const data = JSON.parse(body);
-          const analysisResult = data.analysisResult;
-          const format = data.format || 'html';
-          const projectPath = data.projectPath || '.';
-
-          const context = ContextLoader.loadContext(projectPath);
-
-          let report: string;
-
-          if (format === 'html') {
-            const renderer = new HTMLReportRenderer(analysisResult, context);
-            report = renderer.render();
-            res.setHeader('Content-Type', 'text/html');
-          } else if (format === 'sarif') {
-            const renderer = new SARIFRenderer(analysisResult);
-            report = renderer.render();
-            res.setHeader('Content-Type', 'application/json');
-          } else {
-            report = JSON.stringify(analysisResult, null, 2);
-            res.setHeader('Content-Type', 'application/json');
-          }
-
-          res.writeHead(200);
-          res.end(report);
-        } catch (error) {
-          res.setHeader('Content-Type', 'application/json');
-          res.writeHead(500);
-          res.end(
-            JSON.stringify({
-              error: (error as Error).message,
-            }),
-          );
-        }
-      });
-      return;
+      const data = await readBody(req);
+      let result;
+      try {
+        result = assertAnalysisResult(data.analysisResult);
+      } catch (error) {
+        throw new HttpError(400, `Invalid analysisResult: ${(error as Error).message}`);
+      }
+      const context = data.projectPath ? ContextLoader.loadContext(resolveProjectPath(data.projectPath)) : null;
+      if (data.format === 'sarif') return send(res, 200, new SARIFRenderer(result).render());
+      if (data.format === 'json') return send(res, 200, result);
+      return send(res, 200, new HTMLReportRenderer(result, context).render(), 'text/html; charset=utf-8');
     }
 
-    // Not found
-    res.setHeader('Content-Type', 'application/json');
-    res.writeHead(404);
-    res.end(
-      JSON.stringify({
-        error: 'Not found',
-        path: pathname,
-        availableEndpoints: [
-          'GET /api/health',
-          'POST /api/analyze',
-          'POST /api/report',
-        ],
-      }),
-    );
+    throw new HttpError(404, 'Not found');
   } catch (error) {
-    res.setHeader('Content-Type', 'application/json');
-    res.writeHead(500);
-    res.end(
-      JSON.stringify({
-        error: 'Internal server error',
-        message: (error as Error).message,
-      }),
-    );
+    if (error instanceof HttpError) return send(res, error.status, { error: error.message });
+    process.stderr.write(`[${new Date().toISOString()}] ${method} ${pathname} failed: ${(error as Error).stack}\n`);
+    return send(res, 500, { error: 'Analysis failed', detail: (error as Error).message });
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`🚀 Hawkeye API Server listening on http://localhost:${PORT}`);
-  console.log(`📝 Available endpoints:`);
-  console.log(`   GET  /api/health        - Health check`);
-  console.log(`   POST /api/analyze       - Analyze project`);
-  console.log(`   POST /api/report        - Generate report`);
-  console.log(`\n📚 Documentation: https://github.com/lucasvsantos591-hue/hawkeye`);
+server.requestTimeout = 10 * 60 * 1000;
+server.listen(PORT, HOST, () => {
+  process.stderr.write(
+    `Hawkeye API ${TOOL_VERSION} on http://${HOST}:${PORT} (root: ${ALLOWED_ROOT}, auth: ${TOKEN ? 'token' : 'none, loopback only'})\n`,
+  );
 });
 
-process.on('SIGTERM', () => {
-  console.log('Shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => server.close(() => process.exit(0)));
+}

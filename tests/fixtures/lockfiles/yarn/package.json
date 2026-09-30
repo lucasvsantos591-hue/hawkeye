@@ -1,0 +1,3 @@
+{ "name": "vapp", "version": "1.0.0", "main": "src/index.js",
+  "dependencies": { "express": "4.16.0", "lodash": "4.17.10", "axios": "0.21.0", "jsonwebtoken": "8.5.1" },
+  "devDependencies": { "mocha": "5.0.0" } }

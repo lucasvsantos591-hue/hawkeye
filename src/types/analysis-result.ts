@@ -7,8 +7,25 @@ export interface VulnerabilityInfo {
   current_version: string;
   affected_versions: string[];
   severity: Severity;
+  /** EPSS probability of exploitation in the next 30 days, as a percentage (0-100). */
   epss_score?: number;
+  epss_percentile?: number;
   is_exploited_in_wild?: boolean;
+  advisory_id?: string;
+  aliases?: string[];
+  summary?: string;
+  advisory_url?: string;
+  cvss_vector?: string;
+  fixed_version?: string;
+  dependency_type?: 'direct' | 'transitive';
+  introduced_via?: string[];
+  is_dev?: boolean;
+}
+
+export interface UsageEvidence {
+  files: string[];
+  members: string[];
+  sites: string[];
 }
 
 export interface CallChain {
@@ -35,7 +52,18 @@ export interface VulnerabilityFinding {
   confidence: number;
   call_chain?: CallChain;
   reason?: string;
+  evidence?: UsageEvidence;
   remediation: Remediation;
+}
+
+export interface ScanMetadata {
+  tool_version: string;
+  vulnerability_source: string;
+  dependency_source: string;
+  packages_scanned: number;
+  files_scanned: number;
+  include_dev: boolean;
+  warnings: string[];
 }
 
 export interface AnalysisSummary {
@@ -55,6 +83,7 @@ export interface AnalysisResult {
   overall_risk_score: number;
   summary?: AnalysisSummary;
   results: VulnerabilityFinding[];
+  scan?: ScanMetadata;
   context?: any;
 }
 

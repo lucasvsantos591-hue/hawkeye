@@ -1,7 +1,7 @@
 {
   "name": "hawkeye-cli",
-  "version": "0.1.0",
-  "description": "Hawkeye: Precision Vulnerability Reachability Analysis - One Shot, One Target. No False Positives.",
+  "version": "0.2.0",
+  "description": "Hawkeye: reachability-aware dependency vulnerability analysis for JavaScript/TypeScript projects.",
   "type": "module",
   "main": "dist/cli/index.js",
   "bin": {
@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest",
+    "test": "vitest run",
     "test:watch": "vitest --watch",
     "test:e2e": "vitest run tests/e2e",
     "lint": "eslint . --ext .ts",
@@ -46,6 +46,7 @@
     "axios": "^1.6.0",
     "docx": "^9.8.1",
     "js-yaml": "^5.4.2",
+    "semver": "^7.8.5",
     "yargs": "^17.7.0"
   },
   "optionalDependencies": {
@@ -56,6 +57,7 @@
   "devDependencies": {
     "@types/babel__traverse": "^7.28.0",
     "@types/node": "^20.0.0",
+    "@types/semver": "^7.8.0",
     "@types/yargs": "^17.0.35",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
