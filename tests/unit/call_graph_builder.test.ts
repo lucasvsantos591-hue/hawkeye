@@ -110,6 +110,6 @@ describe('JavaScriptCallGraphBuilder', () => {
 
     expect(json).toHaveProperty('main');
     expect(json).toHaveProperty('helper');
-    expect(json.main.called_functions).toContain('helper');
+    expect(json.main.calledFunctions).toContain('helper');
   });
 });

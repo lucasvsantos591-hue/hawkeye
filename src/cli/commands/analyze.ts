@@ -11,6 +11,8 @@ export interface AnalyzeOptions {
   cache?: string;
   verbose?: boolean;
   debug?: boolean;
+  'detect-exposure'?: boolean;
+  context?: string;
 }
 
 export const analyzeCommand = {
@@ -50,6 +52,15 @@ export const analyzeCommand = {
         type: 'string',
         default: './.vra-cache',
         description: 'Cache directory for vulnerabilities',
+      })
+      .option('detect-exposure', {
+        type: 'boolean',
+        default: false,
+        description: 'Detect internet-facing exposure (DNS, SSL, HTTP)',
+      })
+      .option('context', {
+        type: 'string',
+        description: 'Path to Hawkeye context file (JSON/YAML)',
       });
   },
 

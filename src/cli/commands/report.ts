@@ -4,13 +4,14 @@ import type { AnalysisResult } from '../../types/analysis-result.js';
 import { assertAnalysisResult } from '../../types/analysis-result.js';
 import { createAIProvider, type AIProviderName } from '../../adapters/ai_providers/provider_factory.js';
 import { renderMarkdownReport } from '../report/render-markdown.js';
+import { renderDocxReport } from '../../adapters/report/docx_renderer.js';
 import { enrichmentService } from '../../adapters/enrichment/enrichment_service.js';
 import { ContextLoader } from '../../adapters/context/context_loader.js';
 import { HTMLReportRenderer } from '../../adapters/report/html_renderer.js';
 
 export interface ReportPipelineOptions {
   input: string;
-  format: 'html' | 'markdown' | 'json';
+  format: 'html' | 'markdown' | 'json' | 'docx';
   output?: string;
   aiProvider?: AIProviderName | 'none';
   aiToken?: string;
@@ -27,7 +28,7 @@ export interface ReportPipelineDeps {
 export async function runReportPipeline(
   opts: ReportPipelineOptions,
   deps?: ReportPipelineDeps,
-): Promise<string> {
+): Promise<string | Buffer> {
   const readFile = deps?.readFile || fs.readFileSync;
   const createProviderFn = deps?.createProvider || createAIProvider;
 
@@ -97,7 +98,7 @@ export async function runReportPipeline(
   }
 
   // Render report
-  let rendered: string;
+  let rendered: string | Buffer;
 
   if (opts.format === 'html') {
     // Use new HTMLReportRenderer with exposure context
@@ -108,6 +109,8 @@ export async function runReportPipeline(
       aiPowered: !!aiProvider,
       providerName: aiProvider || undefined,
     });
+  } else if (opts.format === 'docx') {
+    rendered = await renderDocxReport(result);
   } else if (opts.format === 'json') {
     rendered = JSON.stringify(result, null, 2);
   } else {
@@ -130,7 +133,7 @@ export const reportCommand = {
       .option('format', {
         alias: 'f',
         type: 'string',
-        choices: ['html', 'markdown', 'json'],
+        choices: ['html', 'markdown', 'json', 'docx'],
         default: 'html',
         description: 'Output report format',
       })
@@ -190,10 +193,18 @@ export const reportCommand = {
       const rendered = await runReportPipeline(options);
 
       if (options.output) {
-        fs.writeFileSync(options.output, rendered);
+        if (typeof rendered === 'string') {
+          fs.writeFileSync(options.output, rendered);
+        } else {
+          fs.writeFileSync(options.output, rendered);
+        }
         console.log(`✅ Report saved to: ${options.output}`);
       } else {
-        console.log(rendered);
+        if (typeof rendered === 'string') {
+          console.log(rendered);
+        } else {
+          console.log('[Binary data - use --output to save to file]');
+        }
       }
     } catch (error) {
       console.error('❌ Report generation failed:', (error as Error).message);

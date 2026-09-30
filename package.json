@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/cli/index.js",
   "bin": {
+    "hawkeye": "dist/cli/index.js",
     "vra": "dist/cli/index.js"
   },
   "scripts": {
@@ -28,7 +29,15 @@
     "sca",
     "sbom"
   ],
-  "author": "VRA Team",
+  "author": "Lucas Verissimo <lucasvsantos591@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lucasvsantos591-hue/hawkeye.git"
+  },
+  "homepage": "https://github.com/lucasvsantos591-hue/hawkeye",
+  "bugs": {
+    "url": "https://github.com/lucasvsantos591-hue/hawkeye/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "@babel/parser": "^7.23.0",
