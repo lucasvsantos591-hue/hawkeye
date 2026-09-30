@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { JavaScriptCallGraphBuilder } from '../../adapters/parsers/js_typescript_parser/call_graph_builder';
+import { JavaScriptCallGraphBuilder } from '../../src/adapters/parsers/js_typescript_parser/call_graph_builder';
 
 describe('JavaScriptCallGraphBuilder', () => {
   let builder: JavaScriptCallGraphBuilder;
