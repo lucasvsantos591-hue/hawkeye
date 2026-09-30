@@ -1,0 +1,13 @@
+
+> hawkeye-cli@0.1.0 test
+> vitest
+
+
+ RUN  v4.1.11 /home/usuario/hawkeye
+
+
+ Test Files  5 passed (5)
+      Tests  57 passed (57)
+   Start at  23:58:09
+   Duration  659ms (transform 437ms, setup 0ms, import 1.10s, tests 412ms, environment 1ms)
+

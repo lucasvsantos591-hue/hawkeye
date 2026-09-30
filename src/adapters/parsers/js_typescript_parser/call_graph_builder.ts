@@ -1,5 +1,5 @@
 import * as t from '@babel/types';
-import traverse from '@babel/traverse';
+import traverse, { NodePath } from '@babel/traverse';
 import { parse } from '@babel/parser';
 
 export interface CallGraphNode {
@@ -43,56 +43,56 @@ export class JavaScriptCallGraphBuilder {
       });
 
       traverse(ast, {
-        Program: (path) => {
+        Program: ((path: NodePath<t.Program>) => {
           // Mark exported functions as entry points
           path.traverse({
-            ExportNamedDeclaration: (expPath) => {
+            ExportNamedDeclaration: ((expPath: NodePath<t.ExportNamedDeclaration>) => {
               const decl = expPath.node.declaration;
               if (t.isFunctionDeclaration(decl) && decl.id) {
                 const node = this.getOrCreateNode(decl.id.name);
                 node.isEntryPoint = true;
               }
-            },
-            ExportDefaultDeclaration: (expPath) => {
+            }) as any,
+            ExportDefaultDeclaration: ((expPath: NodePath<t.ExportDefaultDeclaration>) => {
               const decl = expPath.node.declaration;
               if (t.isFunctionDeclaration(decl) && decl.id) {
                 const node = this.getOrCreateNode(decl.id.name);
                 node.isEntryPoint = true;
               }
-            },
+            }) as any,
           });
-        },
+        }) as any,
 
-        FunctionDeclaration: (path) => {
+        FunctionDeclaration: ((path: NodePath<t.FunctionDeclaration>) => {
           if (path.node.id) {
             const funcName = path.node.id.name;
             this.getOrCreateNode(funcName, 'function', path.node.loc?.start.line);
             this.currentFunction = funcName;
             path.traverse({
-              CallExpression: (callPath) => {
+              CallExpression: ((callPath: NodePath<t.CallExpression>) => {
                 this.recordCall(callPath.node);
-              },
+              }) as any,
             });
             this.currentFunction = null;
           }
-        },
+        }) as any,
 
-        FunctionExpression: (path) => {
+        FunctionExpression: ((path: NodePath<t.FunctionExpression>) => {
           if (path.node.id) {
             const funcName = path.node.id.name;
             this.getOrCreateNode(funcName, 'function', path.node.loc?.start.line);
             const prev = this.currentFunction;
             this.currentFunction = funcName;
             path.traverse({
-              CallExpression: (callPath) => {
+              CallExpression: ((callPath: NodePath<t.CallExpression>) => {
                 this.recordCall(callPath.node);
-              },
+              }) as any,
             });
             this.currentFunction = prev;
           }
-        },
+        }) as any,
 
-        ArrowFunctionExpression: (path) => {
+        ArrowFunctionExpression: ((path: NodePath<t.ArrowFunctionExpression>) => {
           if (this.options.includeArrows && t.isVariableDeclarator(path.parent)) {
             const parent = path.parent as t.VariableDeclarator;
             if (t.isIdentifier(parent.id)) {
@@ -101,16 +101,16 @@ export class JavaScriptCallGraphBuilder {
               const prev = this.currentFunction;
               this.currentFunction = funcName;
               path.traverse({
-                CallExpression: (callPath) => {
+                CallExpression: ((callPath: NodePath<t.CallExpression>) => {
                   this.recordCall(callPath.node);
-                },
+                }) as any,
               });
               this.currentFunction = prev;
             }
           }
-        },
+        }) as any,
 
-        ClassMethod: (path) => {
+        ClassMethod: ((path: NodePath<t.ClassMethod>) => {
           if (this.options.includeClasses && path.node.key) {
             const className = this.getParentClassName(path);
             if (className && t.isIdentifier(path.node.key)) {
@@ -119,21 +119,21 @@ export class JavaScriptCallGraphBuilder {
               const prev = this.currentFunction;
               this.currentFunction = methodName;
               path.traverse({
-                CallExpression: (callPath) => {
+                CallExpression: ((callPath: NodePath<t.CallExpression>) => {
                   this.recordCall(callPath.node);
-                },
+                }) as any,
               });
               this.currentFunction = prev;
             }
           }
-        },
+        }) as any,
 
-        CallExpression: (path) => {
+        CallExpression: ((path: NodePath<t.CallExpression>) => {
           if (this.currentFunction === null) {
             // Top-level call
             this.recordCall(path.node);
           }
-        },
+        }) as any,
       });
     } catch (error) {
       console.error(`Failed to parse ${this.options.filename}:`, error);

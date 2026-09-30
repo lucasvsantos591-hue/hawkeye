@@ -1,6 +1,6 @@
 import { Argv } from 'yargs';
 import * as fs from 'fs';
-import * as path from 'path';
+import { AnalysisEngine } from '../../core/analysis_engine.js';
 
 export interface AnalyzeOptions {
   path: string;
@@ -62,32 +62,34 @@ export const analyzeCommand = {
         throw new Error(`Project path not found: ${options.path}`);
       }
 
-      console.log(`📁 Analyzing project: ${options.path}`);
-      console.log(`🔍 Reachability level: ${options.level}`);
+      // Status messages go to stderr
+      process.stderr.write(`📁 Analyzing project: ${options.path}\n`);
+      process.stderr.write(`🔍 Reachability level: ${options.level}\n`);
 
-      // TODO: Implement actual analysis logic
-      // This is a placeholder that will call the Dart core via FFI or subprocess
+      // Run actual analysis
+      const engine = new AnalysisEngine({
+        projectPath: options.path,
+        level: (options.level as 1 | 2 | 3) || 2,
+        language: options.language,
+      });
 
-      const result = {
-        project_name: path.basename(options.path),
-        project_path: options.path,
-        analysis_timestamp: new Date().toISOString(),
-        language: options.language || 'unknown',
-        total_vulnerabilities: 0,
-        reachable_vulnerabilities: 0,
-        overall_risk_score: 0,
-        results: [],
-      };
+      process.stderr.write(`⏳ Running analysis...\n`);
+      const result = await engine.analyze();
 
-      console.log('✅ Analysis complete!');
+      process.stderr.write(
+        `✅ Analysis complete! Found ${result.total_vulnerabilities} vulnerabilities ` +
+        `(${result.reachable_vulnerabilities} reachable)\n`
+      );
+
+      // JSON output goes to stdout (clean, no status messages)
       console.log(JSON.stringify(result, null, 2));
 
       if (options.output) {
         fs.writeFileSync(options.output, JSON.stringify(result, null, 2));
-        console.log(`📄 Report saved to: ${options.output}`);
+        process.stderr.write(`📄 Report saved to: ${options.output}\n`);
       }
     } catch (error) {
-      console.error('❌ Analysis failed:', (error as Error).message);
+      process.stderr.write(`❌ Analysis failed: ${(error as Error).message}\n`);
       process.exit(1);
     }
   },
