@@ -10,11 +10,11 @@ const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
 export const analyzeCommand = {
   command: 'analyze <path>',
-  description: 'Analyze a JavaScript/TypeScript project for reachable vulnerable dependencies',
+  description: 'Analyze a repository (npm, Python, Maven, Gradle) for reachable vulnerable dependencies',
   builder: (yargs: Argv) => {
     return yargs
       .positional('path', {
-        describe: 'Path to project directory (must contain package.json)',
+        describe: 'Path to the repository or project directory',
         type: 'string',
       })
       .option('level', {
@@ -34,6 +34,15 @@ export const analyzeCommand = {
         alias: 'o',
         type: 'string',
         description: 'Write output to this file instead of stdout',
+      })
+      .option('only', {
+        type: 'string',
+        description: 'Comma-separated project kinds to scan: npm,python,maven,gradle (default: all detected)',
+      })
+      .option('build-tool', {
+        type: 'boolean',
+        default: true,
+        description: 'Run mvn/gradle to resolve Java dependencies exactly (--no-build-tool: read build files only)',
       })
       .option('include-dev', {
         type: 'boolean',
@@ -65,6 +74,8 @@ export const analyzeCommand = {
         projectPath,
         level: argv.level,
         includeDev: argv['include-dev'],
+        kinds: parseKinds(argv.only),
+        allowBuildTool: argv['build-tool'] !== false,
         cacheDir: argv.cache === false ? null : argv.cache,
         onProgress: log,
       });
@@ -73,7 +84,8 @@ export const analyzeCommand = {
       for (const warning of result.scan?.warnings ?? []) log(`⚠️  ${warning}`);
       log(
         `✅ ${result.total_vulnerabilities} vulnerable findings, ${result.reachable_vulnerabilities} reachable ` +
-          `(${result.scan?.packages_scanned} packages, ${result.scan?.files_scanned} source files)`,
+            `(${result.scan?.packages_scanned} packages in ${result.scan?.projects?.length ?? 1} project(s), ` +
+          `${result.scan?.files_scanned} source files)`,
       );
 
       const rendered = render(result, argv.format);
@@ -100,6 +112,20 @@ export const analyzeCommand = {
     }
   },
 };
+
+const KINDS = ['npm', 'python', 'maven', 'gradle'] as const;
+
+export function parseKinds(value: unknown): Array<(typeof KINDS)[number]> | undefined {
+  if (!value) return undefined;
+  const kinds = String(value)
+    .split(',')
+    .map(k => k.trim().toLowerCase())
+    .map(k => (k === 'java' ? ['maven', 'gradle'] : k === 'pypi' ? ['python'] : [k]))
+    .flat();
+  const bad = kinds.filter(k => !(KINDS as readonly string[]).includes(k));
+  if (bad.length) throw new Error(`Unknown --only value(s): ${bad.join(', ')} (use ${KINDS.join(', ')}, java)`);
+  return kinds as Array<(typeof KINDS)[number]>;
+}
 
 function render(result: AnalysisResult, format: string): string {
   if (format === 'sarif') return new SARIFRenderer(result).render();

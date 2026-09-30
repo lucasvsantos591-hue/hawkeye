@@ -7,6 +7,8 @@ COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
 FROM node:20-alpine
+# python3 powers the Python AST analysis; Java projects are resolved from pom.xml/build.gradle via Maven Central.
+RUN apk add --no-cache python3
 LABEL org.opencontainers.image.description="Hawkeye: reachability-aware dependency vulnerability analysis"
 ENV NODE_ENV=production \
     HAWKEYE_HOST=0.0.0.0 \

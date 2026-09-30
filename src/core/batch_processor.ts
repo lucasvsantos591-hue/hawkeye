@@ -1,5 +1,6 @@
 import { AnalysisEngine } from './analysis_engine.js';
 import { mapLimit } from './http.js';
+import { discoverProjects } from './project_discovery.js';
 import { AnalysisResult } from '../types/analysis-result.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -50,8 +51,7 @@ export class BatchProcessor {
         const stat = fs.statSync(fullPath);
 
         if (stat.isDirectory()) {
-          // Check if it's a valid project (has package.json)
-          if (fs.existsSync(path.join(fullPath, 'package.json'))) {
+          if (discoverProjects(fullPath).length > 0) {
             this.addJob({ level: 2, ...defaults, projectPath: fullPath });
           }
         }

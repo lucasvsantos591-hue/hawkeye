@@ -2,45 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import semver from 'semver';
 import * as yaml from 'js-yaml';
+import { flattenGraph, type DependencyInventory, type GraphNode, type InstalledPackage, type Root } from './inventory_types.js';
 
-export interface InstalledPackage {
-  name: string;
-  version: string;
-  direct: boolean;
-  dev: boolean;
-  /** Direct dependencies that pull this package in (empty for direct deps). */
-  via: string[];
-}
+export type { InstalledPackage, DependencyInventory } from './inventory_types.js';
 
-export type InventorySource = 'package-lock.json' | 'yarn.lock' | 'pnpm-lock.yaml' | 'package.json';
-
-export interface DependencyInventory {
-  source: InventorySource;
-  lockfilePath?: string;
-  packages: InstalledPackage[];
-  warnings: string[];
-}
-
-interface GraphNode {
-  name: string;
-  version: string;
-  deps: string[];
-}
-
-interface Root {
-  name: string;
-  nodeId: string;
-  dev: boolean;
-}
+type InventorySource = 'package-lock.json' | 'yarn.lock' | 'pnpm-lock.yaml' | 'bun.lock' | 'package.json';
 
 interface Graph {
   nodes: Map<string, GraphNode>;
   roots: Root[];
 }
 
-const LOCKFILES: InventorySource[] = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'];
+export const NPM_LOCKFILES: InventorySource[] = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock'];
 
-export function readDependencyInventory(projectPath: string): DependencyInventory {
+export function readNpmInventory(projectPath: string): DependencyInventory {
   const pkgJsonPath = path.join(projectPath, 'package.json');
   if (!fs.existsSync(pkgJsonPath)) {
     throw new Error(`package.json not found in ${projectPath}`);
@@ -48,7 +23,7 @@ export function readDependencyInventory(projectPath: string): DependencyInventor
   const rootPkg = readJson(pkgJsonPath);
   const warnings: string[] = [];
 
-  for (const lockName of LOCKFILES) {
+  for (const lockName of NPM_LOCKFILES) {
     const lockfilePath = path.join(projectPath, lockName);
     if (!fs.existsSync(lockfilePath)) continue;
 
@@ -58,6 +33,8 @@ export function readDependencyInventory(projectPath: string): DependencyInventor
       graph = npmGraph(JSON.parse(content), rootPkg);
     } else if (lockName === 'pnpm-lock.yaml') {
       graph = pnpmGraph(yaml.load(content) as any);
+    } else if (lockName === 'bun.lock') {
+      graph = bunGraph(JSON.parse(content.replace(/,(\s*[}\]])/g, '$1')));
     } else {
       graph = yarnGraph(content, projectPath, rootPkg, warnings);
     }
@@ -66,14 +43,20 @@ export function readDependencyInventory(projectPath: string): DependencyInventor
       warnings.push(`${lockName} does not match package.json; falling back to package.json ranges`);
       break;
     }
-    return { source: lockName, lockfilePath, packages: flatten(graph), warnings };
+    return {
+      ecosystem: 'npm',
+      source: lockName,
+      lockfilePath,
+      packages: flattenGraph('npm', graph.nodes, graph.roots, v => !!semver.valid(v)),
+      warnings,
+    };
   }
 
   warnings.push(
     'No usable lockfile found: scanning direct dependencies only, at the lowest version allowed by package.json. ' +
       'Commit a lockfile for accurate results.',
   );
-  return { source: 'package.json', packages: manifestOnly(rootPkg, warnings), warnings };
+  return { ecosystem: 'npm', source: 'package.json', packages: manifestOnly(rootPkg, warnings), warnings };
 }
 
 function readJson(file: string): any {
@@ -82,53 +65,6 @@ function readJson(file: string): any {
 
 function hasDeclaredDeps(pkg: any): boolean {
   return Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).length > 0;
-}
-
-function flatten(graph: Graph): InstalledPackage[] {
-  const viaByNode = new Map<string, Set<string>>();
-  const prodReachable = new Set<string>();
-  const directIds = new Set(graph.roots.map(r => r.nodeId));
-
-  for (const root of graph.roots) {
-    const queue = [root.nodeId];
-    const seen = new Set<string>();
-    while (queue.length) {
-      const id = queue.pop()!;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      if (!root.dev) prodReachable.add(id);
-      if (id !== root.nodeId) {
-        if (!viaByNode.has(id)) viaByNode.set(id, new Set());
-        viaByNode.get(id)!.add(root.name);
-      }
-      const node = graph.nodes.get(id);
-      if (node) queue.push(...node.deps);
-    }
-  }
-
-  const byKey = new Map<string, InstalledPackage>();
-  for (const [id, node] of graph.nodes) {
-    if (!semver.valid(node.version)) continue;
-    const reached = directIds.has(id) || viaByNode.has(id);
-    if (!reached) continue;
-    const key = `${node.name}@${node.version}`;
-    const existing = byKey.get(key);
-    const via = [...(viaByNode.get(id) ?? [])];
-    const direct = directIds.has(id);
-    const dev = !prodReachable.has(id);
-    if (existing) {
-      existing.direct ||= direct;
-      existing.dev &&= dev;
-      existing.via = [...new Set([...existing.via, ...via])];
-    } else {
-      byKey.set(key, { name: node.name, version: node.version, direct, dev, via });
-    }
-  }
-  for (const pkg of byKey.values()) {
-    if (pkg.direct) pkg.via = [];
-    pkg.via.sort();
-  }
-  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function manifestOnly(pkg: any, warnings: string[]): InstalledPackage[] {
@@ -140,7 +76,7 @@ function manifestOnly(pkg: any, warnings: string[]): InstalledPackage[] {
         warnings.push(`Skipping ${name}@${range}: not a semver range`);
         continue;
       }
-      out.push({ name, version: min.version, direct: true, dev, via: [] });
+      out.push({ ecosystem: 'npm', name, version: min.version, direct: true, dev, via: [] });
     }
   };
   add(pkg.dependencies, false);
@@ -275,6 +211,62 @@ function pnpmGraph(lock: any): Graph {
     addRoots(importer.dependencies, false);
     addRoots(importer.optionalDependencies, false);
     addRoots(importer.devDependencies, true);
+  }
+  return { nodes, roots };
+}
+
+// ---------- bun (bun.lock, text format) ----------
+
+function bunGraph(lock: any): Graph {
+  const packages: Record<string, any[]> = lock?.packages ?? {};
+  const nodes = new Map<string, GraphNode>();
+  const roots: Root[] = [];
+
+  const names = (key: string): string[] => {
+    const parts = key.split('/');
+    const out: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      out.push(parts[i].startsWith('@') && i + 1 < parts.length ? `${parts[i]}/${parts[++i]}` : parts[i]);
+    }
+    return out;
+  };
+  const resolve = (fromKey: string, dep: string): string | null => {
+    const chain = fromKey ? names(fromKey) : [];
+    for (let i = chain.length; i >= 0; i--) {
+      const key = [...chain.slice(0, i), dep].join('/');
+      if (packages[key]) return nodes.has(key) || isInstalled(packages[key]) ? key : null;
+    }
+    return null;
+  };
+  const isInstalled = (entry: any[]) => typeof entry?.[0] === 'string' && !/@(workspace|link|file):/.test(entry[0]);
+
+  for (const [key, entry] of Object.entries(packages)) {
+    if (!isInstalled(entry)) continue;
+    const spec = entry[0] as string;
+    const at = spec.lastIndexOf('@');
+    nodes.set(key, { name: spec.slice(0, at), version: spec.slice(at + 1), deps: [] });
+  }
+  for (const [key, entry] of Object.entries(packages)) {
+    const node = nodes.get(key);
+    const meta = entry.find((x: unknown) => typeof x === 'object' && x !== null && !Array.isArray(x)) ?? {};
+    if (!node) continue;
+    for (const dep of Object.keys({ ...meta.dependencies, ...meta.optionalDependencies, ...meta.peerDependencies })) {
+      const target = resolve(key, dep);
+      if (target) node.deps.push(target);
+    }
+  }
+  for (const [wsPath, ws] of Object.entries<any>(lock?.workspaces ?? {})) {
+    const from = wsPath === '' ? '' : ws.name ?? '';
+    const addRoots = (deps: Record<string, string> | undefined, dev: boolean) => {
+      for (const dep of Object.keys(deps ?? {})) {
+        const nodeId = resolve(from, dep) ?? resolve('', dep);
+        if (nodeId) roots.push({ name: dep, nodeId, dev });
+      }
+    };
+    addRoots(ws.dependencies, false);
+    addRoots(ws.optionalDependencies, false);
+    addRoots(ws.peerDependencies, false);
+    addRoots(ws.devDependencies, true);
   }
   return { nodes, roots };
 }

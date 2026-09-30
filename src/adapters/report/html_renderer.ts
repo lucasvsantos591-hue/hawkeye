@@ -297,7 +297,7 @@ export class HTMLReportRenderer {
     if (!scan) return '';
     const warnings = scan.warnings.map(w => `<li>${e(w)}</li>`).join('');
     return `<div class="rescoring-notice">
-      <strong>Scan:</strong> ${e(scan.packages_scanned)} packages from ${e(scan.dependency_source)},
+      <strong>Scan:</strong> ${e(scan.packages_scanned)} packages (${e(scan.dependency_source)}),
       ${e(scan.files_scanned)} source files, advisories from ${e(scan.vulnerability_source)}.
       ${scan.include_dev ? '' : 'Dev-only dependencies excluded.'}
       ${warnings ? `<ul style="margin: 8px 0 0 20px;">${warnings}</ul>` : ''}
@@ -316,6 +316,8 @@ export class HTMLReportRenderer {
         : '<span class="tag">Not reachable</span>',
     );
     if (v.is_exploited_in_wild) tags.push('<span class="tag exploited">CISA KEV: exploited in the wild</span>');
+    if (v.ecosystem) tags.push(`<span class="tag">${e(v.ecosystem)}</span>`);
+    if (v.project && v.project !== '.') tags.push(`<span class="tag">${e(v.project)}</span>`);
     if (v.dependency_type) tags.push(`<span class="tag">${e(v.dependency_type)}</span>`);
     if (v.is_dev) tags.push('<span class="tag">dev</span>');
 

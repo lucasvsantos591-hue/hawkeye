@@ -18,6 +18,8 @@ const CORS_ORIGIN = process.env.HAWKEYE_CORS_ORIGIN ?? '';
 const MAX_BODY = 5 * 1024 * 1024;
 const MAX_CONCURRENT = Number(process.env.HAWKEYE_MAX_CONCURRENCY ?? 2);
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
+// Running mvn/gradle executes the analyzed project's build scripts, so it is opt-in for the API.
+const ALLOW_BUILD_TOOLS = process.env.HAWKEYE_ALLOW_BUILD_TOOLS === '1';
 
 if (!LOOPBACK.has(HOST) && !TOKEN) {
   process.stderr.write(`Refusing to listen on ${HOST} without HAWKEYE_API_TOKEN set.\n`);
@@ -105,7 +107,12 @@ const server = http.createServer(async (req, res) => {
       if (running >= MAX_CONCURRENT) throw new HttpError(429, 'Too many analyses in progress, retry later');
       running++;
       try {
-        const result = await new AnalysisEngine({ projectPath, level, includeDev: data.includeDev === true }).analyze();
+        const result = await new AnalysisEngine({
+          projectPath,
+          level,
+          includeDev: data.includeDev === true,
+          allowBuildTool: ALLOW_BUILD_TOOLS,
+        }).analyze();
         const format = data.format ?? 'json';
         if (format === 'sarif') return send(res, 200, new SARIFRenderer(result).render());
         if (format === 'html') {

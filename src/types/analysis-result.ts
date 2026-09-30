@@ -12,6 +12,11 @@ export interface VulnerabilityInfo {
   epss_percentile?: number;
   is_exploited_in_wild?: boolean;
   advisory_id?: string;
+  ecosystem?: 'npm' | 'PyPI' | 'Maven';
+  /** Sub-project the dependency belongs to, relative to the scanned root ('.' for the root). */
+  project?: string;
+  /** Lockfile or manifest the version was read from, relative to the scanned root. */
+  manifest?: string;
   aliases?: string[];
   summary?: string;
   advisory_url?: string;
@@ -63,6 +68,7 @@ export interface ScanMetadata {
   packages_scanned: number;
   files_scanned: number;
   include_dev: boolean;
+  projects?: Array<{ path: string; kind: string; ecosystem: string; dependency_source: string; packages: number }>;
   warnings: string[];
 }
 

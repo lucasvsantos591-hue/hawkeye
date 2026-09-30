@@ -9,7 +9,7 @@ function ruleId(finding: VulnerabilityFinding): string {
 function locationOf(finding: VulnerabilityFinding): [string, number] {
   const site = finding.evidence?.sites[0];
   const match = site?.match(/^(.*):(\d+)$/);
-  return match ? [match[1], Math.max(1, Number(match[2]))] : ['package.json', 1];
+  return match ? [match[1], Math.max(1, Number(match[2]))] : [finding.vulnerability.manifest ?? 'package.json', 1];
 }
 
 /**

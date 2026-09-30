@@ -1,10 +1,27 @@
 const USER_AGENT = 'hawkeye-cli (+https://github.com/lucasvsantos591-hue/hawkeye)';
 
+export async function fetchText(url: string, init: { timeoutMs?: number; retries?: number } = {}): Promise<string> {
+  return request(url, { ...init, parse: res => res.text() }) as Promise<string>;
+}
+
 export async function fetchJson<T>(
   url: string,
   init: { method?: string; body?: unknown; timeoutMs?: number; retries?: number } = {},
 ): Promise<T> {
-  const { method = 'GET', body, timeoutMs = 30_000, retries = 3 } = init;
+  return request(url, { ...init, parse: res => res.json() }) as Promise<T>;
+}
+
+async function request(
+  url: string,
+  init: {
+    method?: string;
+    body?: unknown;
+    timeoutMs?: number;
+    retries?: number;
+    parse: (res: Response) => Promise<unknown>;
+  },
+): Promise<unknown> {
+  const { method = 'GET', body, timeoutMs = 30_000, retries = 3, parse } = init;
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -19,7 +36,7 @@ export async function fetchJson<T>(
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(timeoutMs),
       });
-      if (res.ok) return (await res.json()) as T;
+      if (res.ok) return await parse(res);
       lastError = new Error(`${method} ${url} -> HTTP ${res.status}`);
       if (res.status !== 429 && res.status < 500) break;
     } catch (error) {

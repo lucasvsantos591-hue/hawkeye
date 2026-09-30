@@ -45,7 +45,28 @@ const advisories: Record<string, any> = {
   },
 };
 
+advisories['PYSEC-yaml'] = {
+  id: 'PYSEC-yaml',
+  summary: 'PyYAML arbitrary code execution',
+  aliases: ['CVE-2020-14343'],
+  severity: [{ type: 'CVSS_V3', score: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H' }],
+  affected: [
+    { package: { name: 'PyYAML', ecosystem: 'PyPI' }, ranges: [{ type: 'ECOSYSTEM', events: [{ introduced: '0' }, { fixed: '5.4' }] }] },
+  ],
+};
+advisories['GHSA-markupsafe'] = {
+  id: 'GHSA-markupsafe',
+  summary: 'markupsafe issue',
+  aliases: [],
+  database_specific: { severity: 'LOW' },
+  affected: [
+    { package: { name: 'markupsafe', ecosystem: 'PyPI' }, ranges: [{ type: 'ECOSYSTEM', events: [{ introduced: '0' }, { fixed: '2.0.0rc1' }] }] },
+  ],
+};
+
 const vulnsByPackage: Record<string, string[]> = {
+  'pyyaml@5.3': ['PYSEC-yaml'],
+  'markupsafe@1.1.1': ['GHSA-markupsafe'],
   'lodash@4.17.10': ['GHSA-lodash'],
   'qs@6.5.1': ['GHSA-qs'],
   'axios@0.21.0': ['GHSA-axios'],
@@ -96,7 +117,11 @@ describe('AnalysisEngine', () => {
 
     expect(result.total_vulnerabilities).toBe(3);
     expect(result.reachable_vulnerabilities).toBe(2);
-    expect(result.scan).toMatchObject({ dependency_source: 'package-lock.json', include_dev: false });
+    expect(result.scan).toMatchObject({
+      dependency_source: '.: package-lock.json',
+      include_dev: false,
+      projects: [{ path: '.', kind: 'npm', ecosystem: 'npm' }],
+    });
 
     expect(byPkg.lodash).toMatchObject({
       is_reachable: true,
@@ -154,5 +179,29 @@ describe('AnalysisEngine', () => {
     const sarif = JSON.parse(new SARIFRenderer(result).render());
     const lodash = sarif.runs[0].results.find((r: any) => r.ruleId === 'GHSA-lodash');
     expect(lodash.locations[0].physicalLocation.artifactLocation.uri).toBe('src/index.js');
+  });
+
+  it('scans Python sub-projects next to npm and inherits reachability through pip-compile parents', async () => {
+    const dir = makeProject();
+    fs.mkdirSync(path.join(dir, 'api'));
+    fs.writeFileSync(
+      path.join(dir, 'api/requirements.txt'),
+      'jinja2==2.11.3\n    # via -r requirements.in\nmarkupsafe==1.1.1\n    # via jinja2\npyyaml==5.3\n    # via -r requirements.in\n',
+    );
+    fs.writeFileSync(path.join(dir, 'api/app.py'), 'import yaml\nfrom jinja2 import Template\nTemplate(yaml.load(open("x")))\n');
+    const result = await new AnalysisEngine({ projectPath: dir, cacheDir: null }).analyze();
+    const byPkg = Object.fromEntries(result.results.map(f => [f.vulnerability.package, f]));
+
+    expect(result.scan!.projects!.map(p => `${p.kind}:${p.path}`).sort()).toEqual(['npm:.', 'python:api']);
+    expect(byPkg.pyyaml).toMatchObject({
+      is_reachable: true,
+      vulnerability: { ecosystem: 'PyPI', project: 'api', severity: 'CRITICAL', fixed_version: '5.4' },
+      remediation: { action: 'Set pyyaml==5.4 (or newer) in requirements.txt and reinstall' },
+    });
+    expect(byPkg.pyyaml.evidence?.sites[0]).toBe('api/app.py:3');
+    expect(byPkg.markupsafe).toMatchObject({
+      is_reachable: true,
+      vulnerability: { dependency_type: 'transitive', introduced_via: ['jinja2'], fixed_version: '2.0.0rc1' },
+    });
   });
 });
