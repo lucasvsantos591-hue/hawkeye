@@ -3,9 +3,10 @@ import * as fs from 'fs';
 import type { AnalysisResult } from '../../types/analysis-result.js';
 import { assertAnalysisResult } from '../../types/analysis-result.js';
 import { createAIProvider, type AIProviderName } from '../../adapters/ai_providers/provider_factory.js';
-import { renderHtmlReport } from '../report/render-html.js';
 import { renderMarkdownReport } from '../report/render-markdown.js';
 import { enrichmentService } from '../../adapters/enrichment/enrichment_service.js';
+import { ContextLoader } from '../../adapters/context/context_loader.js';
+import { HTMLReportRenderer } from '../../adapters/report/html_renderer.js';
 
 export interface ReportPipelineOptions {
   input: string;
@@ -37,6 +38,15 @@ export async function runReportPipeline(
     result = assertAnalysisResult(JSON.parse(rawInput));
   } catch (error) {
     throw new Error(`Invalid analysis result JSON: ${(error as Error).message}`);
+  }
+
+  // Load application context (for exposure detection)
+  const projectPath = result.project_path || process.cwd();
+  const context = ContextLoader.loadContext(projectPath);
+
+  if (context) {
+    console.error(`📍 Loaded context from: ${context.sourceFile}`);
+    console.error(`   Exposure: ${context.config.exposure}`);
   }
 
   // Optionally enrich with CVE context (CISA KEV + FIRST EPSS)
@@ -90,10 +100,9 @@ export async function runReportPipeline(
   let rendered: string;
 
   if (opts.format === 'html') {
-    rendered = renderHtmlReport(result, {
-      aiPowered: !!aiProvider,
-      providerName: aiProvider || undefined,
-    });
+    // Use new HTMLReportRenderer with exposure context
+    const renderer = new HTMLReportRenderer(result, context);
+    rendered = renderer.render();
   } else if (opts.format === 'markdown') {
     rendered = renderMarkdownReport(result, {
       aiPowered: !!aiProvider,

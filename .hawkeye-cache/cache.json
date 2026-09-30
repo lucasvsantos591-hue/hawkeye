@@ -1,9 +1,9 @@
 [
   {
-    "key": "result:8150595a2a40b91f:L1",
+    "key": "result:03ad1eab7f2ebff3:L1",
     "value": {
       "schema_version": "1.0.0",
-      "generated_at": "2026-09-30T01:20:01.491Z",
+      "generated_at": "2026-09-30T01:27:30.921Z",
       "project_name": ".",
       "project_path": ".",
       "total_vulnerabilities": 1,
@@ -49,7 +49,7 @@
         }
       ]
     },
-    "timestamp": 1790731201491,
+    "timestamp": 1790731650921,
     "ttl": 86400000
   }
 ]
