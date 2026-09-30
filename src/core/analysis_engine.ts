@@ -1,6 +1,7 @@
 import { ManifestReader, ProjectManifest } from './manifest_reader.js';
 import { VulnerabilityMatcher, VulnerabilityMatch, CVE } from './vuln_matcher.js';
 import { ReachabilityAnalyzer } from './reachability.js';
+import { CacheManager } from './cache_manager.js';
 import {
   VulnerabilityFinding,
   AnalysisResult,
@@ -18,6 +19,7 @@ export class AnalysisEngine {
   private manifest!: ProjectManifest;
   private vulnMatcher: VulnerabilityMatcher;
   private reachabilityAnalyzer!: ReachabilityAnalyzer;
+  private cache: CacheManager;
 
   constructor(options: AnalysisEngineOptions) {
     this.options = {
@@ -27,6 +29,7 @@ export class AnalysisEngine {
     };
 
     this.vulnMatcher = new VulnerabilityMatcher();
+    this.cache = new CacheManager(path.join(options.projectPath, '.hawkeye-cache'));
   }
 
   /**
@@ -36,6 +39,19 @@ export class AnalysisEngine {
     try {
       // Step 1: Read project manifest
       this.manifest = ManifestReader.readProjectManifest(this.options.projectPath);
+
+      // Step 1.5: Check cache for complete result (if lockfile exists)
+      if (this.manifest.lockfilePath) {
+        const lockfileHash = CacheManager.hashFile(this.manifest.lockfilePath);
+        const cacheKey = CacheManager.resultCacheKey(lockfileHash, this.options.level);
+        const cachedResult = this.cache.get<AnalysisResult>(cacheKey);
+
+        if (cachedResult) {
+          console.error(`♻️ Cache hit! Using cached results`);
+          this.cache.saveToDisk();
+          return cachedResult;
+        }
+      }
 
       // Step 2: Load CVE database (for now, using mock data)
       this.loadMockCveDatabase();
@@ -48,7 +64,20 @@ export class AnalysisEngine {
       const findings = await this.analyzeReachability(vulnMatches);
 
       // Step 5: Build analysis result
-      return this.buildAnalysisResult(findings);
+      const result = this.buildAnalysisResult(findings);
+
+      // Step 6: Cache the result
+      if (this.manifest.lockfilePath) {
+        const lockfileHash = CacheManager.hashFile(this.manifest.lockfilePath);
+        const cacheKey = CacheManager.resultCacheKey(lockfileHash, this.options.level);
+        this.cache.set(cacheKey, result, 24 * 60 * 60 * 1000); // 24 hour TTL
+      }
+
+      // Save cache to disk for next run
+      this.cache.saveToDisk();
+      this.cache.getStats();
+
+      return result;
     } catch (error) {
       throw new Error(`Analysis failed: ${(error as Error).message}`);
     }
