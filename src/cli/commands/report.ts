@@ -102,7 +102,7 @@ export async function runReportPipeline(
 
   if (opts.format === 'html') {
     // Use new HTMLReportRenderer with exposure context
-    const renderer = new HTMLReportRenderer(result, context);
+    const renderer = new HTMLReportRenderer(result, context, aiProvider || undefined);
     rendered = renderer.render();
   } else if (opts.format === 'markdown') {
     rendered = renderMarkdownReport(result, {

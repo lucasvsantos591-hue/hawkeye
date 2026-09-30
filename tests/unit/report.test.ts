@@ -37,7 +37,7 @@ describe('report', () => {
 
       const html = await runReportPipeline(opts);
 
-      expect(html).toContain('VRA - Vulnerability Reachability Analysis');
+      expect(html).toContain('Hawkeye Vulnerability Report');
       expect(html).toContain('CVE-2023-12345');
       expect(html).toContain('CVE-2023-54321');
       expect(html).toContain('express@4.16.0');
@@ -188,7 +188,7 @@ describe('report', () => {
 
       // Should not throw - should continue without AI
       const html = await runReportPipeline(opts, deps);
-      expect(html).toContain('VRA');
+      expect(html).toContain('Hawkeye Vulnerability Report');
     });
 
     it('should preserve remediation fields when not using AI', async () => {
