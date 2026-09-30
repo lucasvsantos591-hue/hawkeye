@@ -2,6 +2,7 @@ import { ManifestReader, ProjectManifest } from './manifest_reader.js';
 import { VulnerabilityMatcher, VulnerabilityMatch, CVE } from './vuln_matcher.js';
 import { ReachabilityAnalyzer } from './reachability.js';
 import { CacheManager } from './cache_manager.js';
+import { VulnerabilityEnricher } from './enrichment_pool.js';
 import {
   VulnerabilityFinding,
   AnalysisResult,
@@ -61,7 +62,13 @@ export class AnalysisEngine {
 
       // Step 4: Analyze reachability based on level
       this.reachabilityAnalyzer = new ReachabilityAnalyzer(this.options.projectPath);
-      const findings = await this.analyzeReachability(vulnMatches);
+      let findings = await this.analyzeReachability(vulnMatches);
+
+      // Step 4.5: Enrich findings with EPSS scores and KEV status
+      console.error(`⏳ Enriching findings with EPSS scores and KEV status...`);
+      const enricher = new VulnerabilityEnricher();
+      findings = await enricher.enrichFindings(findings);
+      await enricher.drain();
 
       // Step 5: Build analysis result
       const result = this.buildAnalysisResult(findings);

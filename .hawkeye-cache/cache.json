@@ -3,7 +3,7 @@
     "key": "result:8150595a2a40b91f:L1",
     "value": {
       "schema_version": "1.0.0",
-      "generated_at": "2026-09-30T01:17:58.586Z",
+      "generated_at": "2026-09-30T01:20:01.491Z",
       "project_name": ".",
       "project_path": ".",
       "total_vulnerabilities": 1,
@@ -43,11 +43,13 @@
             "required_version": ">=1.0.0",
             "breaking_changes": false,
             "action": "npm install axios@latest"
-          }
+          },
+          "epss_score": 75.5,
+          "is_exploited_in_wild": true
         }
       ]
     },
-    "timestamp": 1790731078586,
+    "timestamp": 1790731201491,
     "ttl": 86400000
   }
 ]
