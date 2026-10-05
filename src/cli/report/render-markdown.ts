@@ -1,5 +1,6 @@
 import type { AnalysisResult } from '../../types/analysis-result.js';
 import type { RenderMeta } from './render-html.js';
+import { epssLabel, epssSummaryLine, kevCatalogLine, kevLabel } from '../../adapters/report/threat_labels.js';
 
 /** Escapes text from advisories/AI so it cannot inject links, images, HTML or table cells. */
 function esc(value: unknown): string {
@@ -34,13 +35,18 @@ export function renderMarkdownReport(result: AnalysisResult, meta: RenderMeta): 
   md += `| Not Reachable | ${result.total_vulnerabilities - result.reachable_vulnerabilities} |\n`;
   md += `| Risk Score | ${result.overall_risk_score}/100 |\n\n`;
 
+  const kevLine = kevCatalogLine(result);
+  if (kevLine) md += `${esc(kevLine)}\n\n`;
+  const epssLine = epssSummaryLine(result);
+  if (epssLine) md += `${esc(epssLine)}\n\n`;
+
   md += `## Reachable Vulnerabilities (Action Required)\n\n`;
 
   if (reachable.length === 0) {
     md += `✅ No reachable vulnerabilities found!\n\n`;
   } else {
     reachable.forEach((v) => {
-      md += renderMarkdownVulnerability(v);
+      md += renderMarkdownVulnerability(v, result);
     });
   }
 
@@ -50,7 +56,7 @@ export function renderMarkdownReport(result: AnalysisResult, meta: RenderMeta): 
     md += `No non-reachable vulnerabilities.\n\n`;
   } else {
     notReachable.forEach((v) => {
-      md += renderMarkdownVulnerability(v);
+      md += renderMarkdownVulnerability(v, result);
     });
   }
 
@@ -68,12 +74,15 @@ export function renderMarkdownReport(result: AnalysisResult, meta: RenderMeta): 
   return md;
 }
 
-function renderMarkdownVulnerability(vuln: any): string {
+function renderMarkdownVulnerability(vuln: any, result: AnalysisResult): string {
   let md = `### ${esc(vuln.vulnerability.cve_id)} - ${esc(vuln.vulnerability.package)}@${esc(vuln.vulnerability.current_version)}\n\n`;
 
   md += `**Severity:** ${esc(vuln.vulnerability.severity)} | **Confidence:** ${esc(vuln.confidence)}%\n\n`;
 
   md += `**Affected versions:** ${esc(vuln.vulnerability.affected_versions.join(', '))}\n\n`;
+
+  md += `**EPSS:** ${esc(epssLabel(vuln.vulnerability, result))}\n\n`;
+  md += `**CISA KEV:** ${esc(kevLabel(vuln.vulnerability, result))}\n\n`;
 
   if (vuln.call_chain) {
     md += `**Call chain:** ${esc(vuln.call_chain.entry_point)} → ${esc(vuln.call_chain.path.join(' → '))}\n\n`;

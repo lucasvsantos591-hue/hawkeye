@@ -88,7 +88,7 @@ export const analyzeCommand = {
           `${result.scan?.files_scanned} source files)`,
       );
 
-      const rendered = render(result, argv.format);
+      const rendered = render(result, argv.format, projectPath);
       if (argv.output) {
         fs.writeFileSync(argv.output, rendered);
         log(`📄 Saved to ${argv.output}`);
@@ -127,10 +127,10 @@ export function parseKinds(value: unknown): Array<(typeof KINDS)[number]> | unde
   return kinds as Array<(typeof KINDS)[number]>;
 }
 
-function render(result: AnalysisResult, format: string): string {
+function render(result: AnalysisResult, format: string, projectPath: string): string {
   if (format === 'sarif') return new SARIFRenderer(result).render();
   if (format === 'html') {
-    return new HTMLReportRenderer(result, ContextLoader.loadContext(result.project_path ?? '.')).render();
+    return new HTMLReportRenderer(result, ContextLoader.loadContext(projectPath)).render();
   }
   return JSON.stringify(result, null, 2);
 }

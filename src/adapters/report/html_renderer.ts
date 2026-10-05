@@ -1,7 +1,8 @@
 import { AnalysisResult, VulnerabilityFinding } from '../../types/analysis-result.js';
 import type { HawkeyeContext } from '../context/context_loader.js';
 import { RiskRescorer, RescoreResult, findingKey } from '../../core/risk_rescorer.js';
-import { escapeHtml as e, safeUrl } from './escape.js';
+import { escapeHtml as e, safeUrl, shownPath } from './escape.js';
+import { epssLabel, epssSummaryLine, kevCatalogLine, kevLabel } from './threat_labels.js';
 
 /**
  * Renders analysis results as HTML report with exposure context
@@ -85,6 +86,7 @@ export class HTMLReportRenderer {
     .summary-card.critical { border-left-color: #ff6b6b; }
     .summary-card.high { border-left-color: #ffa94d; }
     .summary-card.medium { border-left-color: #4ecdc4; }
+    .summary-card.low { border-left-color: #adb5bd; }
 
     .summary-label { color: #666; font-size: 0.9em; }
     .summary-value { font-size: 2em; font-weight: 700; color: #333; margin-top: 10px; }
@@ -223,10 +225,10 @@ export class HTMLReportRenderer {
       <h1>🎯 Hawkeye Vulnerability Report</h1>
       <p>${e(this.result.project_name)}</p>
       <div class="metadata">
-        <div class="metadata-item">
+        ${shownPath(this.result.project_path) ? `<div class="metadata-item">
           <div class="metadata-label">Project Path</div>
-          <div class="metadata-value">${e(this.result.project_path || 'N/A')}</div>
-        </div>
+          <div class="metadata-value">${e(shownPath(this.result.project_path))}</div>
+        </div>` : ''}
         <div class="metadata-item">
           <div class="metadata-label">Generated</div>
           <div class="metadata-value">${e(new Date(this.result.generated_at).toLocaleString())}</div>
@@ -240,20 +242,26 @@ export class HTMLReportRenderer {
   }
 
   private renderSummary(): string {
-    const { critical_reachable, high_reachable, medium_reachable } = this.result.summary || {};
+    // Counted from the findings, so results written before low_reachable existed still add up.
+    const count = (severity: string) =>
+      this.result.results.filter(f => f.is_reachable && f.vulnerability.severity === severity).length;
 
     return `<div class="summary">
       <div class="summary-card critical">
         <div class="summary-label">Critical Vulnerabilities</div>
-        <div class="summary-value">${e(critical_reachable || 0)}</div>
+        <div class="summary-value">${e(count('CRITICAL'))}</div>
       </div>
       <div class="summary-card high">
         <div class="summary-label">High Severity</div>
-        <div class="summary-value">${e(high_reachable || 0)}</div>
+        <div class="summary-value">${e(count('HIGH'))}</div>
       </div>
       <div class="summary-card medium">
         <div class="summary-label">Medium Severity</div>
-        <div class="summary-value">${e(medium_reachable || 0)}</div>
+        <div class="summary-value">${e(count('MEDIUM'))}</div>
+      </div>
+      <div class="summary-card low">
+        <div class="summary-label">Low Severity</div>
+        <div class="summary-value">${e(count('LOW'))}</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">Risk Score</div>
@@ -296,10 +304,14 @@ export class HTMLReportRenderer {
     const scan = this.result.scan;
     if (!scan) return '';
     const warnings = scan.warnings.map(w => `<li>${e(w)}</li>`).join('');
+    const kev = kevCatalogLine(this.result);
+    const epss = epssSummaryLine(this.result);
     return `<div class="rescoring-notice">
       <strong>Scan:</strong> ${e(scan.packages_scanned)} packages (${e(scan.dependency_source)}),
       ${e(scan.files_scanned)} source files, advisories from ${e(scan.vulnerability_source)}.
       ${scan.include_dev ? '' : 'Dev-only dependencies excluded.'}
+      ${kev ? `<br>${e(kev)}` : ''}
+      ${epss ? `<br>${e(epss)}` : ''}
       ${warnings ? `<ul style="margin: 8px 0 0 20px;">${warnings}</ul>` : ''}
     </div>`;
   }
@@ -345,7 +357,8 @@ export class HTMLReportRenderer {
         <div class="detail-item"><div class="detail-label">Severity</div><div class="detail-value">${e(v.severity)}</div></div>
         <div class="detail-item"><div class="detail-label">Fixed in</div><div class="detail-value">${e(v.fixed_version ?? 'no fix published')}</div></div>
         <div class="detail-item"><div class="detail-label">Reachability</div><div class="detail-value">Level ${e(finding.reachability_level)} · ${e(finding.confidence)}% confidence</div></div>
-        ${v.epss_score !== undefined ? `<div class="detail-item"><div class="detail-label">EPSS (30-day exploit probability)</div><div class="detail-value">${e(v.epss_score.toFixed(2))}%${v.epss_percentile !== undefined ? ` · p${e(Math.round(v.epss_percentile))}` : ''}</div></div>` : ''}
+        <div class="detail-item"><div class="detail-label">EPSS (30-day exploit probability)</div><div class="detail-value">${e(epssLabel(v, this.result))}</div></div>
+        <div class="detail-item"><div class="detail-label">CISA KEV</div><div class="detail-value">${e(kevLabel(v, this.result))}</div></div>
         ${via}
       </div>
 

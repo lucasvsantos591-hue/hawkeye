@@ -9,7 +9,7 @@ import { buildPythonIndex } from './python_index.js';
 import { buildJavaIndex } from './java_index.js';
 import { CacheManager, defaultCacheDir } from './cache_manager.js';
 import { ProjectFs } from './project_fs.js';
-import { lookupThreatIntel } from './threat_intel.js';
+import { allCveIds, applyThreatIntel, lookupThreatIntel, threatIntelInfo } from './threat_intel.js';
 import { majorOf } from './versions.js';
 import { OsvSource, packageKey, type Advisory } from '../adapters/vulnerability_sources/osv_source.js';
 import type { AnalysisResult, Remediation, Severity, VulnerabilityFinding } from '../types/analysis-result.js';
@@ -131,16 +131,9 @@ export class AnalysisEngine {
     }
 
     this.progress(`🌐 Enriching ${findings.length} findings with EPSS and CISA KEV...`);
-    const intel = await lookupThreatIntel(findings.map(f => f.vulnerability.cve_id), cache);
+    const intel = await lookupThreatIntel(allCveIds(findings.map(f => f.vulnerability)), cache);
     warnings.push(...intel.warnings);
-    for (const finding of findings) {
-      const epss = intel.epss.get(finding.vulnerability.cve_id);
-      if (epss) {
-        finding.vulnerability.epss_score = epss.score;
-        finding.vulnerability.epss_percentile = epss.percentile;
-      }
-      finding.vulnerability.is_exploited_in_wild = intel.kev.has(finding.vulnerability.cve_id);
-    }
+    applyThreatIntel(findings, intel);
     cache.save();
 
     findings.sort(compareFindings);
@@ -148,10 +141,10 @@ export class AnalysisEngine {
     const packagesScanned = scans.reduce((n, s) => n + s.packages.length, 0);
 
     return {
-      schema_version: '1.2.0',
+      schema_version: '1.3.0',
       generated_at: new Date().toISOString(),
       project_name: path.basename(this.root),
-      project_path: this.root,
+      ...(displayPath(this.root) !== undefined ? { project_path: displayPath(this.root) } : {}),
       total_vulnerabilities: findings.length,
       reachable_vulnerabilities: reachable.length,
       overall_risk_score: riskScore(reachable),
@@ -159,6 +152,7 @@ export class AnalysisEngine {
         critical_reachable: reachable.filter(f => f.vulnerability.severity === 'CRITICAL').length,
         high_reachable: reachable.filter(f => f.vulnerability.severity === 'HIGH').length,
         medium_reachable: reachable.filter(f => f.vulnerability.severity === 'MEDIUM').length,
+        low_reachable: reachable.filter(f => f.vulnerability.severity === 'LOW').length,
         false_positives_filtered: findings.length - reachable.length,
       },
       results: findings,
@@ -176,6 +170,7 @@ export class AnalysisEngine {
           dependency_source: s.inventory.source,
           packages: s.packages.length,
         })),
+        threat_intel: threatIntelInfo(intel),
         warnings,
       },
     };
@@ -231,17 +226,22 @@ export class AnalysisEngine {
     if (pkg.direct) {
       const own = this.directReachability(pkg, provider, kind);
       if (own.isReachable || pkg.via.length === 0) return own;
-      const parent = pkg.via
-        .map(name => ({ name, pkg: byName.get(name) }))
-        .map(v => ({ ...v, reach: v.pkg ? this.directReachability(v.pkg, provider, kind) : null }))
-        .find(v => v.reach?.isReachable);
-      if (!parent?.reach) return own;
+      const [parent, ...others] = rankReachableParents(
+        pkg,
+        pkg.via.map(name => {
+          const parentPkg = byName.get(name);
+          return { name, reach: parentPkg ? this.directReachability(parentPkg, provider, kind) : null };
+        }),
+      );
+      if (!parent) return own;
       return {
         ...parent.reach,
         usage: own.usage,
         confidence: Math.min(parent.reach.confidence, 60),
         via: parent.name,
-        reason: `Not used directly, but ${parent.name} depends on it and is reachable (${parent.reach.reason.replace(/\.$/, '')}).`,
+        reason:
+          `Not used directly, but ${parent.name} depends on it and is reachable (${parent.reach.reason.replace(/\.$/, '')}).` +
+          alsoVia(others),
       };
     }
 
@@ -259,15 +259,16 @@ export class AnalysisEngine {
       const parent = byName.get(name);
       return { name, reach: parent ? this.directReachability(parent, provider, kind) : null };
     });
-    const hit = viaResults.find(v => v.reach?.isReachable);
-    if (hit?.reach) {
+    const [hit, ...others] = rankReachableParents(pkg, viaResults);
+    if (hit) {
       return {
         ...hit.reach,
         confidence: Math.min(hit.reach.confidence, 60),
         via: hit.name,
         reason:
-          `Transitive dependency of ${hit.name}, which is reachable (${hit.reach.reason.replace(/\.$/, '')}). ` +
-          'Whether the vulnerable code path inside it is exercised is not verified.',
+          `Transitive dependency of ${hit.name}, which is reachable (${hit.reach.reason.replace(/\.$/, '')}).` +
+          alsoVia(others) +
+          ' Whether the vulnerable code path inside it is exercised is not verified.',
       };
     }
     if (viaResults.some(v => v.reach === null)) {
@@ -366,6 +367,44 @@ export class AnalysisEngine {
     const members = usage.members.length ? ` Uses: ${usage.members.slice(0, 8).join(', ')}.` : '';
     return { isReachable: true, level: 2, confidence: 80, usage, reason: `Used in ${usage.files.length} file(s).${members}` };
   }
+}
+
+/**
+ * The scanned path as it may appear in a report: relative to the working directory, or nothing when the
+ * scan ran outside it (an absolute path exposes the user name and local folder layout of whoever ran it).
+ */
+function displayPath(root: string): string | undefined {
+  const rel = path.relative(process.cwd(), root);
+  if (rel === '') return '.';
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return undefined;
+  return rel.split(path.sep).join('/');
+}
+
+/**
+ * Reachable parents, strongest first: higher confidence, then deeper reachability, then the parent closest
+ * to the package in the dependency graph (fastapi → starlette beats a library that reaches starlette only
+ * through fastapi), then the one used in more files. The order of `via` is alphabetical and must not decide
+ * which parent explains a finding.
+ */
+function rankReachableParents(
+  pkg: InstalledPackage,
+  parents: Array<{ name: string; reach: Reachability | null }>,
+): Array<{ name: string; reach: Reachability }> {
+  const depth = (name: string) => pkg.viaDepth?.[name] ?? Infinity;
+  return parents
+    .filter((p): p is { name: string; reach: Reachability } => !!p.reach?.isReachable)
+    .sort(
+      (a, b) =>
+        b.reach.confidence - a.reach.confidence ||
+        b.reach.level - a.reach.level ||
+        (depth(a.name) === depth(b.name) ? 0 : depth(a.name) < depth(b.name) ? -1 : 1) ||
+        (b.reach.usage?.files.length ?? 0) - (a.reach.usage?.files.length ?? 0) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
+function alsoVia(others: Array<{ name: string }>): string {
+  return others.length ? ` Also pulled in by ${others.map(o => o.name).join(', ')}, which ${others.length === 1 ? 'is' : 'are'} reachable too.` : '';
 }
 
 function buildFinding(

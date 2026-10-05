@@ -1,5 +1,21 @@
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type RemediationType = 'MAJOR' | 'MINOR' | 'OPTIONAL';
+/**
+ * Outcome of the CISA KEV check for one finding:
+ * - listed: in the catalog (confirmed exploitation in the wild)
+ * - not_listed: catalog was checked and none of the advisory's CVE ids is in it
+ * - not_checked: the catalog could not be fetched
+ * - no_cve: the advisory has no CVE id, and KEV only lists CVEs
+ */
+export type KevStatus = 'listed' | 'not_listed' | 'not_checked' | 'no_cve';
+/**
+ * Outcome of the FIRST EPSS lookup for one finding:
+ * - scored: EPSS has a score (epss_score / epss_percentile)
+ * - not_scored: EPSS was queried and has no score yet (usually a CVE published in the last few days)
+ * - not_checked: the EPSS API could not be reached
+ * - no_cve: the advisory has no CVE id, and EPSS only scores CVEs
+ */
+export type EpssStatus = 'scored' | 'not_scored' | 'not_checked' | 'no_cve';
 
 export interface VulnerabilityInfo {
   cve_id: string;
@@ -10,7 +26,11 @@ export interface VulnerabilityInfo {
   /** EPSS probability of exploitation in the next 30 days, as a percentage (0-100). */
   epss_score?: number;
   epss_percentile?: number;
+  epss_status?: EpssStatus;
   is_exploited_in_wild?: boolean;
+  kev_status?: KevStatus;
+  /** Date the CVE was added to the CISA KEV catalog (only when listed). */
+  kev_date_added?: string;
   advisory_id?: string;
   ecosystem?: 'npm' | 'PyPI' | 'Maven';
   /** Sub-project the dependency belongs to, relative to the scanned root ('.' for the root). */
@@ -69,13 +89,24 @@ export interface ScanMetadata {
   files_scanned: number;
   include_dev: boolean;
   projects?: Array<{ path: string; kind: string; ecosystem: string; dependency_source: string; packages: number }>;
+  threat_intel?: { kev: KevCatalogInfo; epss?: { source: string; status: 'checked' | 'failed' } };
   warnings: string[];
+}
+
+export interface KevCatalogInfo {
+  source: string;
+  status: 'checked' | 'failed';
+  catalog_version?: string;
+  date_released?: string;
+  entries?: number;
 }
 
 export interface AnalysisSummary {
   critical_reachable: number;
   high_reachable: number;
   medium_reachable: number;
+  /** Missing in results written before 1.3.0. */
+  low_reachable?: number;
   false_positives_filtered: number;
 }
 
@@ -83,6 +114,7 @@ export interface AnalysisResult {
   schema_version: string;
   generated_at: string;
   project_name: string;
+  /** Scanned path relative to the working directory; omitted when outside it, so no local path leaks into reports. */
   project_path?: string;
   total_vulnerabilities: number;
   reachable_vulnerabilities: number;
