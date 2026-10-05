@@ -5,11 +5,12 @@ import { assertAnalysisResult } from '../../types/analysis-result.js';
 import { createAIProvider, type AIProviderName } from '../../adapters/ai_providers/provider_factory.js';
 import { renderMarkdownReport } from '../report/render-markdown.js';
 import { renderDocxReport } from '../../adapters/report/docx_renderer.js';
-import { lookupThreatIntel } from '../../core/threat_intel.js';
+import { allCveIds, applyThreatIntel, lookupThreatIntel, threatIntelInfo } from '../../core/threat_intel.js';
 import { CacheManager } from '../../core/cache_manager.js';
 import { SARIFRenderer } from '../../adapters/report/sarif_renderer.js';
 import { ContextLoader } from '../../adapters/context/context_loader.js';
 import { HTMLReportRenderer } from '../../adapters/report/html_renderer.js';
+import { shownPath } from '../../adapters/report/escape.js';
 
 export interface ReportPipelineOptions {
   input: string;
@@ -50,20 +51,24 @@ export async function runReportPipeline(
   if (context) {
     process.stderr.write(`📍 Loaded context from ${context.sourceFile} (exposure: ${context.config.exposure})\n`);
   }
+  // Results written before 1.3.0 hold the absolute path of the machine that ran the scan.
+  if (result.project_path && !shownPath(result.project_path)) delete result.project_path;
 
   // Optionally enrich with CVE context (CISA KEV + FIRST EPSS)
   if (opts.enrichment) {
     const cache = new CacheManager();
-    const intel = await lookupThreatIntel(result.results.map(f => f.vulnerability.cve_id), cache);
+    const intel = await lookupThreatIntel(allCveIds(result.results.map(f => f.vulnerability)), cache);
     cache.save();
     intel.warnings.forEach(w => process.stderr.write(`⚠️  ${w}\n`));
-    for (const finding of result.results) {
-      const epss = intel.epss.get(finding.vulnerability.cve_id);
-      if (epss) {
-        finding.vulnerability.epss_score = epss.score;
-        finding.vulnerability.epss_percentile = epss.percentile;
-      }
-      if (intel.kev.size) finding.vulnerability.is_exploited_in_wild = intel.kev.has(finding.vulnerability.cve_id);
+    applyThreatIntel(result.results, intel);
+    if (result.scan) {
+      // Keep the record of an earlier successful check when this one fails.
+      const fresh = threatIntelInfo(intel);
+      const previous = result.scan.threat_intel;
+      result.scan.threat_intel = {
+        kev: fresh.kev.status === 'checked' || !previous ? fresh.kev : previous.kev,
+        epss: fresh.epss.status === 'checked' || !previous?.epss ? fresh.epss : previous.epss,
+      };
     }
   }
 

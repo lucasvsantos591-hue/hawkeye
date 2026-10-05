@@ -105,7 +105,7 @@ describe('JavaScriptCallGraphBuilder', () => {
       function helper() {}
     `;
 
-    const graph = builder.buildFromSource(code);
+    builder.buildFromSource(code);
     const json = builder.toJSON();
 
     expect(json).toHaveProperty('main');

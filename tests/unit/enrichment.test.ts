@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { enrichmentService } from '../../src/adapters/enrichment/enrichment_service';
 import type { VulnerabilityFinding } from '../../src/types/analysis-result';
 
@@ -9,25 +9,6 @@ describe('Enrichment Service', () => {
 
   describe('Priority Calculation', () => {
     it('should calculate CRITICAL priority (80+)', () => {
-      const finding: VulnerabilityFinding = {
-        vulnerability: {
-          cve_id: 'CVE-2023-12345',
-          package: 'express',
-          current_version: '4.16.0',
-          affected_versions: ['<4.17.1'],
-          severity: 'HIGH',
-          epss_score: 9.0,
-          is_exploited_in_wild: true,
-        },
-        is_reachable: true,
-        reachability_level: 2,
-        confidence: 95,
-        remediation: {
-          type: 'MINOR',
-          description: 'Update express',
-        },
-      };
-
       // Mock enrichment with high EPSS and known exploitation
       const enrichment = {
         cve_id: 'CVE-2023-12345',

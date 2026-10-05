@@ -50,9 +50,9 @@ O Hawkeye responde uma pergunta mais útil: **"essa vulnerabilidade está num pa
 | Versão instalada | ✅ | ✅ (lockfile / árvore resolvida) |
 | Import do pacote no código | ❌ | ✅ com arquivo:linha |
 | Quais funções/classes são usadas | ❌ | ✅ (`_.template`, `yaml.load`, `XStream`) |
-| Dependência transitiva → qual direta a puxa | parcial | ✅ e herda a reachability da direta |
+| Dependência transitiva → qual direta a puxa | parcial | ✅ todas, e herda a reachability da direta usada mais próxima |
 | Import só de tipo / só em teste | ❌ | ✅ filtrado, com o motivo |
-| Exploração ativa (CISA KEV) e probabilidade (EPSS) | às vezes | ✅ |
+| Exploração ativa (CISA KEV) e probabilidade (EPSS) | às vezes | ✅ com status explícito em cada CVE, inclusive "não listada" |
 | Explica cada decisão | ❌ | ✅ campos `reason` e `evidence` |
 
 Exemplo real (app de teste com `express 4.16.0`, `lodash 4.17.10`, `axios 0.21.0`): **47 vulnerabilidades,
@@ -158,7 +158,8 @@ Exit codes: `0` ok, `1` erro, `2` limite do `--fail-on` atingido.
 ### `hawkeye scan <package> <version>`
 
 Lista as vulnerabilidades conhecidas de uma versão, sem reachability. `-e/--ecosystem npm|pypi|maven` (padrão
-`npm`) e `-f json|table`. No Maven o nome é `groupId:artifactId`.
+`npm`) e `-f json|table`. No Maven o nome é `groupId:artifactId`. Cada linha traz `epss_status` e `kev_status`
+(veja [Status de EPSS e KEV](#status-de-epss-e-kev)).
 
 ### `hawkeye report <input.json>`
 
@@ -168,7 +169,7 @@ Gera relatórios a partir de um JSON do `analyze`.
 |---|---|
 | `-f, --format` | `html` (padrão), `markdown`, `json`, `docx`, `sarif` |
 | `-o, --output` | Arquivo de saída (obrigatório para `docx`) |
-| `--enrichment` | Reconsulta EPSS/KEV (útil para JSONs antigos) |
+| `--enrichment` | Reconsulta EPSS/KEV e grava os status por CVE (útil para JSONs antigos) |
 | `--ai-provider` | `claude`, `openai`, `gemini`, `custom` ou `none` (padrão), para sugestões de remediação por IA |
 | `--ai-token`, `--ai-model`, `--ai-base-url` | Credencial, modelo e endpoint (`custom` = qualquer API compatível com OpenAI) |
 
@@ -197,7 +198,7 @@ serviços de terceiros (`dns.google`, `crt.sh`), por isso não use com hostnames
      │                            (até 4 níveis; ignora node_modules, target, build, venv, tests, examples…)
      │
      ├─ 2. Inventário ────────── versão instalada de cada pacote, direto × transitivo,
-     │                            quais dependências diretas puxam cada transitiva, prod × dev
+     │                            quais dependências diretas puxam cada transitiva (e a que distância), prod × dev
      │
      ├─ 3. Vulnerabilidades ──── OSV.dev querybatch por (ecossistema, nome, versão)
      │                            → advisories (duplicatas GHSA/PYSEC/CVE unificadas por alias),
@@ -205,7 +206,8 @@ serviços de terceiros (`dns.google`, `crt.sh`), por isso não use com hostnames
      │
      ├─ 4. Reachability ──────── índice de uso do código, construído só para projetos com pacotes vulneráveis
      │
-     ├─ 5. Enriquecimento ────── EPSS (probabilidade de exploração em 30 dias) + CISA KEV
+     ├─ 5. Enriquecimento ────── EPSS (probabilidade de exploração em 30 dias) + CISA KEV,
+     │                            pelo CVE e pelos aliases; todo finding recebe um status de cada
      │
      └─ 6. Priorização ───────── alcançável → KEV → severidade → confiança → EPSS
 ```
@@ -226,6 +228,12 @@ serviços de terceiros (`dns.google`, `crt.sh`), por isso não use com hostnames
 | Só importado em testes | não alcançável | 80 |
 | Só `import type` (TS) / só em `if TYPE_CHECKING:` (Python) | não alcançável | 90 |
 | Transitiva puxada só por dependências que não são usadas | não alcançável | 60 |
+
+**Qual direta explica uma transitiva:** quando várias dependências diretas usadas puxam o mesmo pacote, vale a
+de maior confiança; no empate, a **mais próxima no grafo** (o `fastapi` depende direto do `starlette`, então ganha
+de uma biblioteca interna que só chega ao `starlette` através do `fastapi`) e depois a usada em mais arquivos. As
+demais aparecem no `reason` (*"Also pulled in by …"*), para a remediação não depender de uma só. Dependências
+de teste nunca aparecem em `introduced_via` de um pacote de produção.
 
 **Java (Maven/Gradle):** bibliotecas Java são muito carregadas sem import (backends de log como log4j-core,
 drivers JDBC, auto-configuração do Spring). Por isso, **nenhuma dependência de produção é marcada como não
@@ -283,7 +291,9 @@ Trecho real de `hawkeye analyze` (JSON):
     "is_dev": false,
     "epss_score": 21.33,
     "epss_percentile": 97.53,
-    "is_exploited_in_wild": false
+    "epss_status": "scored",
+    "is_exploited_in_wild": false,
+    "kev_status": "not_listed"
   },
   "is_reachable": true,
   "reachability_level": 2,
@@ -310,19 +320,39 @@ Campos principais:
 | `reason` | Por que a decisão foi tomada, em texto |
 | `evidence.sites` / `members` | Onde e o que o código usa do pacote |
 | `dependency_type`, `introduced_via` | Direta ou transitiva e quais dependências diretas a puxam |
-| `epss_score` | Probabilidade (%) de exploração nos próximos 30 dias; `epss_percentile` compara com todos os CVEs |
-| `is_exploited_in_wild` | Está no catálogo CISA KEV (exploração ativa confirmada) |
+| `epss_score`, `epss_status` | Probabilidade (%) de exploração nos próximos 30 dias; `epss_percentile` compara com todos os CVEs |
+| `is_exploited_in_wild`, `kev_status` | Está no catálogo CISA KEV (exploração ativa confirmada); `kev_date_added` quando listada |
 | `project`, `manifest` | Subprojeto e arquivo de onde a versão foi lida |
 | `scan.projects`, `scan.warnings` | O que foi analisado e **tudo que pode ter reduzido a precisão** (lockfile ausente, falha do Maven, arquivos não parseados, EPSS fora do ar…) |
+| `scan.threat_intel` | Qual catálogo KEV foi consultado (versão, data, nº de CVEs) e se EPSS/KEV responderam |
+| `project_path` | Caminho relativo ao diretório atual; omitido se a análise rodou fora dele, para não expor o caminho local de quem rodou |
 
-Resumo do topo: `total_vulnerabilities`, `reachable_vulnerabilities`, `summary.critical_reachable`… e
-`summary.false_positives_filtered` (vulnerabilidades presentes, mas avaliadas como não alcançáveis).
+Resumo do topo: `total_vulnerabilities`, `reachable_vulnerabilities`, `summary.critical_reachable`, `high_…`,
+`medium_…`, `low_reachable` e `summary.false_positives_filtered` (vulnerabilidades presentes, mas avaliadas como
+não alcançáveis).
+
+### Status de EPSS e KEV
+
+Todo finding diz o resultado das duas consultas, inclusive quando é negativo, para ficar claro que a checagem foi
+feita em cada CVE:
+
+| Status | EPSS (`epss_status`) | CISA KEV (`kev_status`) |
+|---|---|---|
+| Consultado, com resultado | `scored`: score e percentil | `listed`: exploração ativa confirmada, com a data de inclusão |
+| Consultado, sem resultado | `not_scored`: ainda sem score (em geral, CVE publicada há poucos dias) | `not_listed`: sem exploração conhecida |
+| Fonte fora do ar | `not_checked` | `not_checked` (nunca vira "não listada") |
+| Advisory sem CVE | `no_cve`: EPSS só pontua CVEs | `no_cve`: o KEV só lista CVEs |
+
+A consulta usa o CVE principal e todos os aliases do advisory. JSONs gerados antes desses campos continuam
+funcionando: `hawkeye report` deduz o status, e `--enrichment` reconsulta as fontes.
 
 **Como revisar:** comece pelos alcançáveis com KEV ou severidade alta. Nos "não alcançáveis", leia o
 `reason`: *"declared but never imported"* pode ser um plugin carregado por configuração.
 
-**HTML:** um card por finding, com severidade, versão corrigida, EPSS, KEV, tags (ecossistema, subprojeto,
-direta/transitiva), onde é usado e a remediação. Todo texto é escapado e a página tem CSP restritiva.
+**HTML:** totais por severidade (CRITICAL, HIGH, MEDIUM e LOW) e qual catálogo KEV/EPSS foi consultado; depois um
+card por finding, com severidade, versão corrigida, EPSS, KEV (sempre com o status), tags (ecossistema,
+subprojeto, direta/transitiva), onde é usado e a remediação. Todo texto é escapado e a página tem CSP restritiva.
+Markdown e DOCX trazem os mesmos status de EPSS e KEV.
 
 **SARIF 2.1.0:** cada resultado aponta para o primeiro `arquivo:linha` onde o pacote é usado (ou para o
 lockfile/manifest), com `security-severity` para o GitHub Code Scanning.
@@ -444,7 +474,7 @@ TTLs do cache: consultas ao OSV 6 h, advisories 7 dias, EPSS/KEV 24 h, POMs 30 d
 
 ## ✅ Validação
 
-Testado em 2026-09-29 contra projetos reais:
+Testado em 2026-09-29 e 2026-10-05 contra projetos reais:
 
 | Projeto | Ecossistema | Verificação | Resultado |
 |---|---|---|---|
@@ -457,8 +487,10 @@ Testado em 2026-09-29 contra projetos reais:
 | spring-projects/spring-petclinic | Maven | resolvedor × `mvn dependency:tree` | **106/106 pacotes idênticos** |
 | WebGoat | Maven | resolvedor × `mvn dependency:tree` | **191/191 pacotes idênticos**; xstream 1.4.5 detectado e usado |
 | spring-petclinic (build.gradle) | Gradle | resolvedor × `gradlew dependencies` | todas as bibliotecas de runtime idênticas |
+| fastapi/full-stack-fastapi-template (jan/2025) | Python (uv.lock) | versão anterior × atual do Hawkeye | mesmos 53 findings; a direta creditada passou a ser a mais próxima (ex.: `urllib3` via `sentry-sdk`, não via `emails` → `requests`) e as 6 LOW entram no resumo |
+| Serviço FastAPI interno (58 pacotes, 636 arquivos) | Python (uv.lock) | EPSS/KEV × FIRST e catálogo da CISA | 21/21 idênticos: 1 listada no KEV, 19 não listadas, 1 advisory sem CVE |
 
-Mais de 90 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
+Mais de 110 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
 
 ---
 
@@ -487,6 +519,7 @@ Mais de 90 testes unitários rodam offline (lockfiles reais como fixtures, APIs 
 npm ci
 npm run build        # tsc → dist/
 npm test             # vitest (offline)
+npm run lint         # eslint
 npx tsc --noEmit     # typecheck
 ```
 
@@ -514,7 +547,7 @@ src/
 │   ├── inventory_types.ts, cache_manager.ts, http.ts, batch_processor.ts, risk_rescorer.ts
 ├── adapters/
 │   ├── vulnerability_sources/osv_source.ts
-│   ├── report/                   # html, sarif, docx
+│   ├── report/                   # html, sarif, docx; threat_labels.ts = status de EPSS/KEV
 │   ├── ai_providers/             # claude, openai, gemini, custom
 │   ├── context/                  # .hawkeye.yaml, K8s, Terraform (experimental)
 │   └── exposure-detection/       # comando expose

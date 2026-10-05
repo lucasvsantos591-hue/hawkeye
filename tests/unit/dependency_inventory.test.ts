@@ -60,7 +60,7 @@ describe('readNpmInventory', () => {
 
     expect(inv.packages).toEqual([
       { ecosystem: 'npm', name: 'a', version: '1.2.0', direct: true, dev: false, via: [] },
-      { ecosystem: 'npm', name: 'b', version: '2.1.0', direct: false, dev: false, via: ['a'] },
+      { ecosystem: 'npm', name: 'b', version: '2.1.0', direct: false, dev: false, via: ['a'], viaDepth: { a: 1 } },
     ]);
   });
 });

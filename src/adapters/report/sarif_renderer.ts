@@ -1,4 +1,6 @@
 import { AnalysisResult, VulnerabilityFinding } from '../../types/analysis-result.js';
+import { epssStatusOf, kevStatusOf } from './threat_labels.js';
+import { shownPath } from './escape.js';
 
 const SECURITY_SEVERITY: Record<string, string> = { CRITICAL: '9.5', HIGH: '8.0', MEDIUM: '5.5', LOW: '3.0' };
 
@@ -42,7 +44,7 @@ export class SARIFRenderer {
           },
           results: this.generateResults(),
           properties: {
-            projectPath: this.result.project_path,
+            projectPath: shownPath(this.result.project_path),
             riskScore: this.result.overall_risk_score,
             generatedAt: this.result.generated_at,
           },
@@ -80,7 +82,9 @@ export class SARIFRenderer {
           tags: ['security', 'dependency'],
           'security-severity': SECURITY_SEVERITY[v.severity] ?? '5.0',
           epss_score: v.epss_score,
+          epss_status: epssStatusOf(v, this.result),
           is_exploited_in_wild: v.is_exploited_in_wild,
+          kev_status: kevStatusOf(v, this.result),
         },
       });
     }

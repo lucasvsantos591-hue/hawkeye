@@ -2,7 +2,7 @@ import { Argv } from 'yargs';
 import semver from 'semver';
 import type { Ecosystem } from '../../core/versions.js';
 import { CacheManager } from '../../core/cache_manager.js';
-import { lookupThreatIntel } from '../../core/threat_intel.js';
+import { allCveIds, epssLookup, kevLookup, lookupThreatIntel } from '../../core/threat_intel.js';
 import { OsvSource, packageKey } from '../../adapters/vulnerability_sources/osv_source.js';
 
 const ECOSYSTEMS: Record<string, Ecosystem> = { npm: 'npm', pypi: 'PyPI', python: 'PyPI', maven: 'Maven', java: 'Maven' };
@@ -40,20 +40,26 @@ export const scanCommand = {
       const cache = new CacheManager();
       const ref = { ecosystem, name, version };
       const advisories = (await new OsvSource(cache).findAdvisories([ref])).get(packageKey(ref)) ?? [];
-      const intel = await lookupThreatIntel(advisories.map(a => a.cve_id), cache);
+      const intel = await lookupThreatIntel(allCveIds(advisories), cache);
       cache.save();
       intel.warnings.forEach(w => process.stderr.write(`⚠️  ${w}\n`));
 
-      const vulnerabilities = advisories.map(a => ({
+      const vulnerabilities = advisories.map(a => {
+        const kev = kevLookup([a.cve_id, ...a.aliases], intel.kev);
+        const epss = epssLookup([a.cve_id, ...a.aliases], intel.epss);
+        return {
         id: a.id,
         cve_id: a.cve_id,
         severity: a.severity,
         summary: a.summary,
         fixed_version: a.fixed_version ?? null,
-        epss_score: intel.epss.get(a.cve_id)?.score ?? null,
-        in_cisa_kev: intel.kev.has(a.cve_id),
+        epss_score: epss.score?.score ?? null,
+        epss_status: epss.status,
+        in_cisa_kev: kev.status === 'listed',
+        kev_status: kev.status,
         url: a.url,
-      }));
+        };
+      });
 
       if (argv.format === 'table') {
         process.stderr.write(`${name}@${version}: ${vulnerabilities.length} known vulnerabilities\n`);

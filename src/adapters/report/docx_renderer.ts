@@ -12,6 +12,7 @@ import {
   TextRun,
 } from 'docx';
 import type { AnalysisResult } from '../../types/analysis-result.js';
+import { epssLabel, epssSummaryLine, kevCatalogLine, kevLabel } from './threat_labels.js';
 
 const COLORS = {
   ROXO: '667EEA',
@@ -415,6 +416,11 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
     ]),
   );
 
+  const kevLine = kevCatalogLine(result, 'pt');
+  if (kevLine) sections.push(createText(kevLine, { size: 9 }));
+  const epssLine = epssSummaryLine(result, 'pt');
+  if (epssLine) sections.push(createText(epssLine, { size: 9 }));
+
   sections.push(new Paragraph({ text: '', pageBreakBefore: true }));
 
   // ========== SEÇÃO DE EXPOSIÇÃO À INTERNET ==========
@@ -464,10 +470,8 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
     );
 
     // Tabela de Alcançabilidade - usando dados enriquecidos quando disponíveis
-    const epssScore = finding.enrichment?.epss?.score
-      ? `${Number(finding.enrichment.epss.score).toFixed(1)}/100 (p${Number(finding.enrichment.epss.percentile).toFixed(0)})`
-      : '—';
-    const cisaKev = finding.enrichment?.cisa_kev?.is_known_exploited ? 'Sim — CISA KEV' : 'Não listada';
+    const epssScore = epssLabel(vuln, result, 'pt');
+    const cisaKev = kevLabel(vuln, result, 'pt');
     const priorityDisplay = finding.priority_score !== undefined ? `${finding.priority_score}/100 — ${finding.priority}` : severity;
 
     sections.push(
