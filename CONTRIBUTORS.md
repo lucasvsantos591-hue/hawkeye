@@ -10,16 +10,6 @@ Thank you to everyone who has contributed to Hawkeye!
   - Founder & Lead Developer
   - Email: lucasvsantos591@gmail.com
 
-### Key Contributors
-
-- **Marchizinho** (@marchizinho)
-  - Concept, Architecture & Vision
-  - Strategic guidance and design decisions
-  
-- **Heinrich VHO** (@heinrickVHO2)
-  - Architecture Review & Technical Feedback
-  - Best practices and quality assurance
-
 ---
 
 ## 🎯 How to Contribute
