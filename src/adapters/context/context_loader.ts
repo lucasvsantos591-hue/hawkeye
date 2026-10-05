@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import type { ExposureContext } from '../../types/context.js';
 
 export type NetworkExposure = 'internet-facing' | 'internal-only' | 'isolated' | 'unknown';
 
@@ -56,6 +57,50 @@ export class ContextLoader {
     }
 
     return null;
+  }
+
+  /** Reads the JSON written by `hawkeye expose -o`. */
+  static readExposureFile(filePath: string): ExposureContext {
+    let data: unknown;
+    try {
+      data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch (error) {
+      throw new Error(`Cannot read exposure file ${filePath}: ${(error as Error).message}`);
+    }
+    if (typeof data !== 'object' || data === null || typeof (data as ExposureContext).is_internet_facing !== 'boolean') {
+      throw new Error(`${filePath} is not a hawkeye expose result (missing is_internet_facing)`);
+    }
+    return data as ExposureContext;
+  }
+
+  /**
+   * Context for a report: the project's .hawkeye.yaml plus the exposure detected by `hawkeye expose`.
+   * Detection only ever raises the exposure. A host that answers from the internet is internet-facing; a
+   * host that does not answer is not proven internal, so the declared value (or unknown) stays.
+   */
+  static forReport(
+    projectPath: string | null,
+    detected?: ExposureContext,
+  ): { context: HawkeyeContext | null; warnings: string[] } {
+    const declared = projectPath ? this.loadContext(projectPath) : null;
+    if (!detected?.is_internet_facing) return { context: declared, warnings: [] };
+
+    const warnings: string[] = [];
+    const was = declared?.config.exposure;
+    if (declared && was && was !== 'internet-facing' && was !== 'unknown') {
+      warnings.push(
+        `${path.basename(declared.sourceFile)} declares exposure "${was}", but hawkeye expose found the host ` +
+          'reachable from the internet; using internet-facing.',
+      );
+    }
+    return {
+      context: {
+        config: { ...declared?.config, exposure: 'internet-facing' },
+        sourceFile: declared ? `${declared.sourceFile} + hawkeye expose` : 'hawkeye expose',
+        sourceFormat: declared?.sourceFormat ?? 'json',
+      },
+      warnings,
+    };
   }
 
   /**

@@ -148,6 +148,7 @@ Analisa um repositório ou projeto.
 | `--include-dev` | `false` | Inclui devDependencies / grupos dev / escopo `test` |
 | `--no-build-tool` | – | Não executa `mvn`/`gradle` (lê só os arquivos de build) |
 | `--fail-on` | – | `low`, `medium`, `high`, `critical`: exit code 2 se existir finding alcançável nessa severidade ou acima |
+| `--exposure <arquivo>` | – | Saída do `hawkeye expose -o`; veja [Contexto de exposição](#-contexto-de-exposição-e-remediação-com-ia) |
 | `--cache <dir>` / `--no-cache` | `~/.cache/hawkeye` | Cache das respostas do OSV/EPSS/KEV/Maven Central |
 
 Exit codes: `0` ok, `1` erro, `2` limite do `--fail-on` atingido.
@@ -170,6 +171,7 @@ Gera relatórios a partir de um JSON do `analyze`.
 | `-f, --format` | `html` (padrão), `markdown`, `json`, `docx`, `sarif` |
 | `-o, --output` | Arquivo de saída (obrigatório para `docx`) |
 | `--enrichment` | Reconsulta EPSS/KEV e grava os status por CVE (útil para JSONs antigos) |
+| `--exposure <arquivo>` | Saída do `hawkeye expose -o`, anexada ao resultado (igual ao `analyze`) |
 | `--ai-provider` | `claude`, `openai`, `gemini`, `custom` ou `none` (padrão), para sugestões de remediação por IA |
 | `--ai-token`, `--ai-model`, `--ai-base-url` | Credencial, modelo e endpoint (`custom` = qualquer API compatível com OpenAI) |
 
@@ -180,10 +182,10 @@ Analisa cada subdiretório que contenha um projeto suportado. `--concurrency` (p
 
 ### `hawkeye expose <hostname>`
 
-Heurística de exposição à internet (DNS, certificado TLS, HTTP) para um hostname; `-o` grava o resultado em JSON.
-Nenhum comando lê esse arquivo ainda: para ajustar o score do relatório, defina `exposure` no `.hawkeye.yaml` (veja
-[Contexto de exposição](#-contexto-de-exposição-e-remediação-com-ia)). Consulta serviços de terceiros (`dns.google`,
-`crt.sh`), por isso não use com hostnames sensíveis.
+Heurística de exposição à internet para um hostname: resolve o DNS (resolvedor do sistema), tenta um handshake TLS e
+requisições HTTP direto no host. `-o` grava o resultado em JSON, que o `analyze` e o `report` recebem com
+`--exposure` (veja [Contexto de exposição](#-contexto-de-exposição-e-remediação-com-ia)). Só fala com o host
+informado e com o seu DNS; nenhum serviço de terceiros é consultado.
 
 ### Servidor HTTP
 
@@ -327,6 +329,7 @@ Campos principais:
 | `project`, `manifest` | Subprojeto e arquivo de onde a versão foi lida |
 | `scan.projects`, `scan.warnings` | O que foi analisado e **tudo que pode ter reduzido a precisão** (lockfile ausente, falha do Maven, arquivos não parseados, EPSS fora do ar…) |
 | `scan.threat_intel` | Qual catálogo KEV foi consultado (versão, data, nº de CVEs) e se EPSS/KEV responderam |
+| `context.exposure` | Saída do `hawkeye expose`, quando passada com `--exposure` |
 | `project_path` | Caminho relativo ao diretório atual; omitido se a análise rodou fora dele, para não expor o caminho local de quem rodou |
 
 Resumo do topo: `total_vulnerabilities`, `reachable_vulnerabilities`, `summary.critical_reachable`, `high_…`,
@@ -450,6 +453,18 @@ custom_tags:
 O mesmo exemplo, comentado, está em [`examples/hawkeye.example.yaml`](./examples/hawkeye.example.yaml). O rescoring é
 heurístico e **não altera** `is_reachable`.
 
+**Exposição detectada (`hawkeye expose`):** em vez de declarar, dá para medir:
+
+```bash
+hawkeye expose api.minha-empresa.com -o exposure.json
+hawkeye analyze . --exposure exposure.json -f html -o relatorio.html
+```
+
+O resultado vai para `context.exposure` no JSON, o HTML mostra de onde veio a exposição e o DOCX ganha uma seção com
+DNS, certificado e endpoints. A detecção **só aumenta** o risco: host acessível pela internet vira `internet-facing`
+(mesmo que o `.hawkeye.yaml` diga outra coisa, com um aviso); host que não respondeu não prova isolamento, então vale
+o que estiver declarado, ou `unknown`.
+
 **IA (opcional):** `hawkeye report resultado.json --ai-provider claude` gera sugestões de remediação por
 finding. Tokens: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` ou `--ai-token`; o modelo pode ser
 trocado com `--ai-model`. O provedor recebe CVE, pacote, versões, severidade e o caminho de dependências, nunca
@@ -496,7 +511,7 @@ Testado em 2026-09-29 e 2026-10-05 contra projetos reais:
 | fastapi/full-stack-fastapi-template (jan/2025) | Python (uv.lock) | versão anterior × atual do Hawkeye | mesmos 53 findings; a direta creditada passou a ser a mais próxima (ex.: `urllib3` via `sentry-sdk`, não via `emails` → `requests`) e as 6 LOW entram no resumo |
 | Serviço FastAPI interno (58 pacotes, 636 arquivos) | Python (uv.lock) | EPSS/KEV × FIRST e catálogo da CISA | 21/21 idênticos: 1 listada no KEV, 19 não listadas, 1 advisory sem CVE |
 
-Cerca de 100 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
+Cerca de 90 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
 
 ---
 
@@ -555,8 +570,7 @@ src/
 │   ├── vulnerability_sources/osv_source.ts
 │   ├── report/                   # html, sarif, docx; threat_labels.ts = status de EPSS/KEV
 │   ├── ai_providers/             # claude, openai, gemini, custom
-│   ├── context/                  # .hawkeye.yaml (contexto de exposição)
-│   └── exposure-detection/       # comando expose
+│   └── context/                  # .hawkeye.yaml e saída do expose (contexto de exposição)
 └── types/analysis-result.ts      # schema do resultado
 tests/unit/                        # testes offline; fixtures em tests/fixtures
 ```

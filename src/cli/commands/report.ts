@@ -21,6 +21,8 @@ export interface ReportPipelineOptions {
   aiBaseUrl?: string;
   aiModel?: string;
   enrichment?: boolean;
+  /** Output of `hawkeye expose -o`, attached to the result as context.exposure. */
+  exposure?: string;
 }
 
 export interface ReportPipelineDeps {
@@ -44,9 +46,12 @@ export async function runReportPipeline(
     throw new Error(`Invalid analysis result JSON: ${(error as Error).message}`);
   }
 
-  // Load application context (for exposure detection)
+  if (opts.exposure) result.context = { ...result.context, exposure: ContextLoader.readExposureFile(opts.exposure) };
+
+  // .hawkeye.yaml of the project plus the exposure detected by `hawkeye expose`, if any
   const projectPath = result.project_path || process.cwd();
-  const context = ContextLoader.loadContext(projectPath);
+  const { context, warnings: contextWarnings } = ContextLoader.forReport(projectPath, result.context?.exposure);
+  contextWarnings.forEach(w => process.stderr.write(`⚠️  ${w}\n`));
 
   if (context) {
     process.stderr.write(`📍 Loaded context from ${context.sourceFile} (exposure: ${context.config.exposure})\n`);
@@ -177,6 +182,10 @@ export const reportCommand = {
         type: 'boolean',
         default: false,
         description: 'Enrich findings with CVE context (CISA KEV + FIRST EPSS)',
+      })
+      .option('exposure', {
+        type: 'string',
+        description: 'Exposure file written by `hawkeye expose -o`; raises the HTML score if internet-facing',
       });
   },
 
@@ -190,6 +199,7 @@ export const reportCommand = {
       aiBaseUrl: argv['ai-base-url'],
       aiModel: argv['ai-model'],
       enrichment: argv.enrichment,
+      exposure: argv.exposure,
     };
 
     try {

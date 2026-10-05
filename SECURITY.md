@@ -38,7 +38,8 @@ We will:
    - Package names and versions go to `api.osv.dev` to look up advisories.
    - CVE ids go to `api.first.org` (EPSS); the CISA KEV catalog is downloaded as a whole.
    - Java projects without Maven/Gradle: POMs are fetched from Maven Central (or `HAWKEYE_MAVEN_REPO`).
-   - `hawkeye expose <hostname>` queries `dns.google` and `crt.sh` with the hostname.
+   - `hawkeye expose <hostname>` resolves the hostname with your system DNS and connects to that host (TLS
+     handshake, HTTP requests). No third-party service is queried.
    - Point the `HAWKEYE_*_URL` variables at internal mirrors if package names are sensitive.
 
 3. **AI Provider Choice** (optional, `hawkeye report --ai-provider`):

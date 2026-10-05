@@ -12,9 +12,11 @@ export class HTMLReportRenderer {
   private rescorer: RiskRescorer;
   private rescores: Map<string, RescoreResult>;
   private aiProvider?: string;
+  private context: HawkeyeContext | null;
 
   constructor(result: AnalysisResult, context?: HawkeyeContext | null, aiProvider?: string) {
     this.result = result;
+    this.context = context ?? null;
     this.rescorer = new RiskRescorer(context);
     this.rescores = this.rescorer.rescoreFindings(result.results);
     this.aiProvider = aiProvider;
@@ -236,9 +238,23 @@ export class HTMLReportRenderer {
         <div class="metadata-item">
           <div class="metadata-label">Network Exposure</div>
           <div class="exposure-badge ${e(exposureClass)}">${e(exposure || 'Unknown')}</div>
+          ${this.exposureSource() ? `<div style="font-size: 0.8em; margin-top: 4px;">${e(this.exposureSource())}</div>` : ''}
         </div>
       </div>
     </header>`;
+  }
+
+  /** Where the exposure shown in the header came from: detection by `hawkeye expose` or a context file. */
+  private exposureSource(): string {
+    const detected = this.result.context?.exposure;
+    if (detected?.is_internet_facing && this.rescorer.getExposure() === 'internet-facing') {
+      const methods = detected.detection_methods?.length ? ` via ${detected.detection_methods.join(', ')}` : '';
+      return `detected by hawkeye expose${methods}`;
+    }
+    if (this.context?.sourceFile && this.context.sourceFile !== 'default') {
+      return `declared in ${this.context.sourceFile.split(/[\\/]/).pop()}`;
+    }
+    return '';
   }
 
   private renderSummary(): string {
