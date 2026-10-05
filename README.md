@@ -445,12 +445,14 @@ custom_tags:
   team: payments
 ```
 
-Exemplos em [`examples/`](./examples). O rescoring é heurístico e **não altera** `is_reachable`.
+O mesmo exemplo, comentado, está em [`examples/hawkeye.example.yaml`](./examples/hawkeye.example.yaml). O rescoring é
+heurístico e **não altera** `is_reachable`.
 
 **IA (opcional):** `hawkeye report resultado.json --ai-provider claude` gera sugestões de remediação por
 finding. Tokens: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` ou `--ai-token`; o modelo pode ser
-trocado com `--ai-model`. No relatório as sugestões aparecem marcadas como geradas por IA: **revise antes de
-executar qualquer comando**.
+trocado com `--ai-model`. O provedor recebe CVE, pacote, versões, severidade e o caminho de dependências, nunca
+código-fonte (o que sai da máquina está no [SECURITY.md](./SECURITY.md)). No relatório as sugestões aparecem
+marcadas como geradas por IA: **revise antes de executar qualquer comando**.
 
 ---
 
