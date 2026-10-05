@@ -180,8 +180,10 @@ Analisa cada subdiretório que contenha um projeto suportado. `--concurrency` (p
 
 ### `hawkeye expose <hostname>`
 
-Heurística de exposição à internet (DNS, certificado TLS, HTTP) que gera um contexto para o rescoring. Consulta
-serviços de terceiros (`dns.google`, `crt.sh`), por isso não use com hostnames sensíveis.
+Heurística de exposição à internet (DNS, certificado TLS, HTTP) para um hostname; `-o` grava o resultado em JSON.
+Nenhum comando lê esse arquivo ainda: para ajustar o score do relatório, defina `exposure` no `.hawkeye.yaml` (veja
+[Contexto de exposição](#-contexto-de-exposição-e-remediação-com-ia)). Consulta serviços de terceiros (`dns.google`,
+`crt.sh`), por isso não use com hostnames sensíveis.
 
 ### Servidor HTTP
 
