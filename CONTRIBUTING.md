@@ -72,17 +72,8 @@ git push origin feature/my-feature
 
 ### Project Structure
 
-```
-hawkeye/
-├── src/
-│   ├── types/                 # TypeScript types & schemas
-│   ├── adapters/
-│   │   └── ai_providers/      # AI provider implementations
-│   └── cli/                   # Command-line interface
-├── tests/                     # Test suite (vitest)
-├── docs/                      # Documentation
-└── package.json               # Dependencies
-```
+See the annotated tree in [README › Desenvolvimento](README.md#-desenvolvimento). Tests live in
+`tests/unit/` and run offline (real lockfiles as fixtures, mocked APIs).
 
 ### Testing
 
@@ -125,7 +116,7 @@ npm run lint      # Check linting
 ### 🔧 Code
 - [ ] Bug fixes from issues
 - [ ] New AI providers (Cohere, etc.)
-- [ ] Parser for new languages (Java, Go, Rust)
+- [ ] Support for new ecosystems (Go, .NET, Rust)
 - [ ] Performance improvements
 - [ ] Test coverage improvements
 
@@ -145,7 +136,7 @@ npm run lint      # Check linting
 ## Questions?
 
 - Check existing issues
-- Read [README.md](README.md) and [TESTING_GUIDE.md](TESTING_GUIDE.md)
+- Read [README.md](README.md), including the known limitations section
 - Open a discussion or issue
 - Email: lucasvsantos591@gmail.com
 

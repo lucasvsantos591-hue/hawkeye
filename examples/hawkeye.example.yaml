@@ -1,0 +1,15 @@
+# Contexto de exposição do Hawkeye.
+# Copie para a raiz do projeto analisado como .hawkeye.yaml (ou .hawkeye.json com os mesmos campos).
+# O relatório HTML ajusta o score pela exposição e mostra o motivo; is_reachable não muda.
+
+application_name: payments-api
+environment: production
+
+# internet-facing (×1.5) | internal-only (×0.8) | isolated (×0.4) | unknown (sem ajuste)
+exposure: internet-facing
+
+compliance:
+  pci_dss: true
+
+custom_tags:
+  team: payments

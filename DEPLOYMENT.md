@@ -174,14 +174,16 @@ steps:
 curl http://localhost:3000/api/health
 
 # Expected response:
-# {"status":"ok","version":"0.2.0","uptime":3600,"busy":0}
+# {"status":"ok","version":"0.3.0","uptime":3600,"busy":0}
 ```
 
 ### Scaling
 
 Each analysis is CPU-bound (Babel parsing), so a 2,000-file repo takes about 5s. For more throughput,
-run several instances behind a load balancer and share `HAWKEYE_CACHE_DIR` on a volume, which cuts
-repeated OSV/EPSS/KEV lookups.
+run several instances behind a load balancer. Give each instance its own `HAWKEYE_CACHE_DIR`: the cache is
+one JSON file and concurrent writers overwrite each other's entries (the file is never corrupted, but
+lookups are repeated). A shared cache is tracked in
+[#6](https://github.com/lucasvsantos591-hue/hawkeye/issues/6).
 
 ### Security Considerations
 
