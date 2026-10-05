@@ -299,10 +299,8 @@ function createExposureSection(exposure: any): (Paragraph | Table)[] {
 export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> {
   const sections: (Paragraph | Table)[] = [];
 
-  // Use enriched results if available
-  const enrichedResults = (result as any).enriched_results;
-  const displayResults = enrichedResults || result.results;
-  const reachableVulnerabilities = displayResults.filter((r: any) => r.is_reachable);
+  const displayResults = result.results;
+  const reachableVulnerabilities = displayResults.filter(r => r.is_reachable);
 
   // ========== CAPA ==========
   sections.push(
@@ -337,7 +335,7 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
   );
 
   const metaTable = createTable(['Projeto', 'Versão', 'Data', 'Classificação'], [
-    [result.project_name, 'V2.1', new Date().toLocaleDateString('pt-BR'), 'Confidencial - Uso Interno'],
+    [result.project_name, `Hawkeye ${result.scan?.tool_version ?? ''}`.trim(), new Date().toLocaleDateString('pt-BR'), 'Confidencial - Uso Interno'],
   ]);
   sections.push(metaTable);
 
@@ -364,10 +362,9 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
     '1. Sumário Executivo .............................................................................................  3',
     '2. Como Ler Este Relatório .......................................................................................  3',
     ...reachableVulnerabilities.map(
-      (_: any, i: number) => {
-        const vuln = displayResults[i];
-        const cveId = vuln.cve_id || vuln.vulnerability?.cve_id || 'CVE-UNKNOWN';
-        const pkg = vuln.package || vuln.vulnerability?.package || 'unknown';
+      (finding, i) => {
+        const cveId = finding.vulnerability.cve_id;
+        const pkg = finding.vulnerability.package;
         return `${i + 3}. ${cveId} · ${pkg} ......................................................................................  ${i + 4}`;
       }
     ),
@@ -400,19 +397,18 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
 
   sections.push(
     ...createBulletList([
-      'Nível 1 (Importação): Pacote detectado no projeto',
-      'Nível 2 (Função): Função vulnerável é alcançável no código',
-      'Nível 3 (Taint): Dados de entrada podem alcançar a vulnerabilidade — maior criticidade',
+      'Nível 1 (Importação): o pacote é importado ou carregado pelo projeto',
+      'Nível 2 (Uso): os nomes importados do pacote são usados no código; a função vulnerável em si não é identificada',
     ]),
   );
 
-  sections.push(createText('Enriquecimento de CVE (V2.1):', { bold: true }));
+  sections.push(createText('Enriquecimento de CVE:', { bold: true }));
 
   sections.push(
     ...createBulletList([
       'CISA KEV: Identifica se o CVE está sendo explorado ativamente',
-      'FIRST EPSS: Score de probabilidade de exploração (0-100)',
-      'Prioridade: Fórmula ponderada (EPSS 40% + CISA 30% + Reachability 30%)',
+      'FIRST EPSS: Probabilidade (%) de exploração nos próximos 30 dias',
+      'Prioridade: alcançável → CISA KEV → severidade → confiança → EPSS',
     ]),
   );
 
@@ -461,96 +457,61 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
       }),
     );
 
-    // Descrição breve
+    // Descrição: só dados do advisory e do finding, nada inferido
+    const fixed = vuln.fixed_version ? `corrigida em ${vuln.fixed_version}` : 'sem versão corrigida publicada';
     sections.push(
       createText(
-        `${affectedVersions} não bloqueiam ${cveId} em ${pkgName}. Permite operação de ${finding.reason || 'operação perigosa'}.`,
+        `${vuln.summary ? `${vuln.summary}. ` : ''}Versão instalada: ${vuln.current_version}` +
+          `${affectedVersions ? ` (afetadas: ${affectedVersions})` : ''}; ${fixed}.`,
         { size: 9 },
       ),
     );
 
-    // Tabela de Alcançabilidade - usando dados enriquecidos quando disponíveis
     const epssScore = epssLabel(vuln, result, 'pt');
     const cisaKev = kevLabel(vuln, result, 'pt');
-    const priorityDisplay = finding.priority_score !== undefined ? `${finding.priority_score}/100 — ${finding.priority}` : severity;
 
     sections.push(
       createTable(
-        ['Alcançabilidade', 'Confiança', 'EPSS', 'CISA KEV', 'Prioridade'],
-        [
-          [
-            `Nível ${finding.reachability_level}`,
-            `${finding.confidence}%`,
-            epssScore,
-            cisaKev,
-            priorityDisplay,
-          ],
-        ],
+        ['Alcançabilidade', 'Confiança', 'EPSS', 'CISA KEV', 'Severidade'],
+        [[`Nível ${finding.reachability_level}`, `${finding.confidence}%`, epssScore, cisaKev, severity]],
       ),
     );
 
-    // Priority reasoning from enrichment
-    if (finding.priority_reasoning) {
-      sections.push(createText(`Justificativa: ${finding.priority_reasoning}`, { size: 9, italic: true }));
-    }
+    sections.push(createHeading('Por que é alcançável', 2));
 
-    sections.push(createHeading('Cadeia de exploração', 2));
-
-    // Call chain
+    if (finding.reason) sections.push(createText(finding.reason, { size: 9 }));
     if (finding.call_chain) {
-      const chainText = finding.call_chain.path.join(' → ');
       sections.push(
-        ...createCodeBlock(`[entrada pública, sem schema]\n${chainText}\n[funcao vulneravel do ${vuln.package}]`),
+        ...createCodeBlock(`${finding.call_chain.entry_point}\n${finding.call_chain.path.join(' → ')}`, 'Caminho:'),
       );
     }
-
-    // Passos de exploração
+    const sites: string[] = finding.evidence?.sites ?? [];
+    if (sites.length) {
+      sections.push(createText('Onde o código usa o pacote:', { bold: true, size: 9 }));
+      sections.push(...createBulletList([...sites.slice(0, 5), ...(sites.length > 5 ? [`… e mais ${sites.length - 5}`] : [])]));
+    }
     sections.push(
-      ...createBulletList([
-        `1. Entrada — endpoint público aceita JSON arbitrário, sem schema nem allowlist.`,
-        `2. Propagação — req.body é repassado intacto a camada de dados/intermediários.`,
-        `3. Entrada — data.items chega a _.map(), ainda sob controle total do atacante.`,
-        `4. Escrita — a chave "__proto__" não é filtrada, resolve para Object.prototype no lodash.`,
-        `5. Impacto — toda checagem de propriedade ("isAdmin", "isVerified") passa a retornar true.`,
-      ]),
-    );
-
-    sections.push(createHeading('Por que é explorável neste código', 2));
-
-    sections.push(
-      ...createBulletList([
-        'Endpoint público, sem autenticação e sem validação de schema no caminho.',
-        `lodash ${vuln.current_version} dentro da faixa afetada, com _.map() eletivamente invocada — não é import ocioso.`,
-        'Taint contínuo da entrada HTTP até o sink, confirmado com 87% de confiança.',
-        'Impacto global: middlewares que testam user.isAdmin passam a aprovar qualquer requisição.',
-      ]),
+      createText(
+        'O Hawkeye confirma que o pacote é usado pelo código, não que a função vulnerável é chamada: ' +
+          'confira o advisory antes de descartar o risco.',
+        { size: 9, italic: true },
+      ),
     );
 
     sections.push(createHeading('Correção', 2));
 
-    const requiredVersion = finding.remediation?.required_version || finding.required_version || 'latest';
-    const effortEstimate = finding.remediation?.effort_estimate || finding.effort_estimate || 'A determinar';
-    const hasBreakingChanges = finding.remediation?.breaking_changes || finding.breaking_changes;
-    const changesNeeded = finding.remediation?.changes_needed || finding.changes_needed;
-
-    sections.push(
-      ...createCodeBlock(
-        `npm install ${pkgName}@${requiredVersion} && npm test`,
-        'Comando:',
-      ),
-    );
-
-    sections.push(
-      createText(`Esforço: ${effortEstimate}`, { bold: true, size: 9 }),
-    );
-
-    if (hasBreakingChanges) {
-      sections.push(createText('⚠️ Quebra de compatibilidade: sim', { size: 9 }));
+    const remediation = finding.remediation ?? {};
+    if (remediation.description) sections.push(createText(remediation.description, { size: 9 }));
+    if (remediation.action) sections.push(...createCodeBlock(remediation.action, 'Comando:'));
+    if (remediation.effort_estimate) {
+      sections.push(createText(`Esforço: ${remediation.effort_estimate}`, { bold: true, size: 9 }));
     }
-
-    if (changesNeeded && Array.isArray(changesNeeded) && changesNeeded.length > 0) {
+    if (remediation.breaking_changes) {
+      sections.push(createText('⚠️ Quebra de compatibilidade provável (versão major)', { size: 9 }));
+    }
+    if (Array.isArray(remediation.changes_needed) && remediation.changes_needed.length > 0) {
       sections.push(createText('Ajustes necessários:', { bold: true, size: 9 }));
-      sections.push(...createBulletList(changesNeeded.map((c: string) => c)));
+      sections.push(...createBulletList(remediation.changes_needed));
     }
 
     if (idx < reachableVulnerabilities.length - 1) {
@@ -565,14 +526,15 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
 
   sections.push(createHeading('Sequência de Remediação', 2));
 
-  const actionItems = reachableVulnerabilities.map((r: any) => [
-    `Dia 1–2: ${r.cve_id || r.vulnerability.cve_id}`,
-    r.remediation?.effort_estimate || 'A determinar',
-    r.remediation?.type || 'MINOR',
+  // Mesma ordem do relatório: alcançável → KEV → severidade → confiança → EPSS
+  const actionItems = reachableVulnerabilities.map(r => [
+    `${r.vulnerability.cve_id} · ${r.vulnerability.package}`,
+    r.remediation.type,
+    r.remediation.action ?? r.remediation.description,
   ]);
 
   if (actionItems.length > 0) {
-    sections.push(createTable(['CVE e Pacote', 'Esforço', 'Tipo'], actionItems));
+    sections.push(createTable(['CVE e Pacote', 'Tipo', 'Ação'], actionItems));
   }
 
   sections.push(createHeading('Referências', 2));
@@ -588,7 +550,7 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
 
   sections.push(
     createText(
-      `Relatório gerado por Hawkeye V2.1 em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`,
+      `Relatório gerado por Hawkeye${result.scan?.tool_version ? ` ${result.scan.tool_version}` : ''} em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`,
       { size: 9, italic: true, align: AlignmentType.CENTER },
     ),
   );
