@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { AnalysisEngine } from '../../core/analysis_engine.js';
 import { SARIFRenderer } from '../../adapters/report/sarif_renderer.js';
 import { HTMLReportRenderer } from '../../adapters/report/html_renderer.js';
-import { ContextLoader } from '../../adapters/context/context_loader.js';
+import { ContextLoader, type HawkeyeContext } from '../../adapters/context/context_loader.js';
 import type { AnalysisResult, Severity } from '../../types/analysis-result.js';
 
 const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
@@ -57,6 +57,10 @@ export const analyzeCommand = {
         type: 'string',
         choices: ['low', 'medium', 'high', 'critical'],
         description: 'Exit with code 2 if a reachable finding at or above this severity exists',
+      })
+      .option('exposure', {
+        type: 'string',
+        description: 'Exposure file written by `hawkeye expose -o`; raises the HTML score if internet-facing',
       });
   },
 
@@ -68,6 +72,8 @@ export const analyzeCommand = {
       if (!fs.existsSync(projectPath)) {
         throw new Error(`Project path not found: ${projectPath}`);
       }
+      // Read before the scan so a bad file fails fast.
+      const exposure = argv.exposure ? ContextLoader.readExposureFile(argv.exposure) : undefined;
       log(`📁 Analyzing ${projectPath} (level ${argv.level})`);
 
       const engine = new AnalysisEngine({
@@ -80,6 +86,7 @@ export const analyzeCommand = {
         onProgress: log,
       });
       const result = await engine.analyze();
+      if (exposure) result.context = { exposure };
 
       for (const warning of result.scan?.warnings ?? []) log(`⚠️  ${warning}`);
       log(
@@ -88,7 +95,9 @@ export const analyzeCommand = {
           `${result.scan?.files_scanned} source files)`,
       );
 
-      const rendered = render(result, argv.format, projectPath);
+      const { context, warnings: contextWarnings } = ContextLoader.forReport(projectPath, result.context?.exposure);
+      contextWarnings.forEach(w => log(`⚠️  ${w}`));
+      const rendered = render(result, argv.format, context);
       if (argv.output) {
         fs.writeFileSync(argv.output, rendered);
         log(`📄 Saved to ${argv.output}`);
@@ -127,10 +136,10 @@ export function parseKinds(value: unknown): Array<(typeof KINDS)[number]> | unde
   return kinds as Array<(typeof KINDS)[number]>;
 }
 
-function render(result: AnalysisResult, format: string, projectPath: string): string {
+function render(result: AnalysisResult, format: string, context: HawkeyeContext | null): string {
   if (format === 'sarif') return new SARIFRenderer(result).render();
   if (format === 'html') {
-    return new HTMLReportRenderer(result, ContextLoader.loadContext(projectPath)).render();
+    return new HTMLReportRenderer(result, context).render();
   }
   return JSON.stringify(result, null, 2);
 }

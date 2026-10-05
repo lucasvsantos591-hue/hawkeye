@@ -116,7 +116,7 @@ const server = http.createServer(async (req, res) => {
         const format = data.format ?? 'json';
         if (format === 'sarif') return send(res, 200, new SARIFRenderer(result).render());
         if (format === 'html') {
-          const html = new HTMLReportRenderer(result, ContextLoader.loadContext(projectPath)).render();
+          const html = new HTMLReportRenderer(result, ContextLoader.forReport(projectPath).context).render();
           return send(res, 200, html, 'text/html; charset=utf-8');
         }
         return send(res, 200, result);
@@ -133,7 +133,8 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         throw new HttpError(400, `Invalid analysisResult: ${(error as Error).message}`);
       }
-      const context = data.projectPath ? ContextLoader.loadContext(resolveProjectPath(data.projectPath)) : null;
+      const projectDir = data.projectPath ? resolveProjectPath(data.projectPath) : null;
+      const { context } = ContextLoader.forReport(projectDir, result.context?.exposure);
       if (data.format === 'sarif') return send(res, 200, new SARIFRenderer(result).render());
       if (data.format === 'json') return send(res, 200, result);
       return send(res, 200, new HTMLReportRenderer(result, context).render(), 'text/html; charset=utf-8');

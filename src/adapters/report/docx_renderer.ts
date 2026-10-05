@@ -202,9 +202,11 @@ function createExposureSection(exposure: any): (Paragraph | Table)[] {
     return sections;
   }
 
-  sections.push(createHeading('3. Análise de Exposição à Internet'));
+  sections.push(createHeading('Análise de Exposição à Internet (hawkeye expose)'));
 
-  const isInternetFacing = exposure.is_internet_facing ? 'Sim - Publicamente Acessível' : 'Não - Apenas Interno';
+  const isInternetFacing = exposure.is_internet_facing
+    ? 'Sim - acessível pela internet'
+    : 'Não detectada (a heurística não comprova que seja apenas interna)';
   const statusColor = exposure.is_internet_facing ? COLORS.VERMELHO : COLORS.VERDE;
 
   sections.push(

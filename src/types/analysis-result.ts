@@ -1,3 +1,5 @@
+import type { ExposureContext } from './context.js';
+
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type RemediationType = 'MAJOR' | 'MINOR' | 'OPTIONAL';
 /**
@@ -122,7 +124,8 @@ export interface AnalysisResult {
   summary?: AnalysisSummary;
   results: VulnerabilityFinding[];
   scan?: ScanMetadata;
-  context?: any;
+  /** Extra context attached to the result; `exposure` is the output of `hawkeye expose`. */
+  context?: { exposure?: ExposureContext };
 }
 
 export function assertAnalysisResult(data: unknown): AnalysisResult {
