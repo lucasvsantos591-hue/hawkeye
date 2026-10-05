@@ -1,6 +1,10 @@
 import type { AnalysisResult } from '../../types/analysis-result.js';
-import type { RenderMeta } from './render-html.js';
 import { epssLabel, epssSummaryLine, kevCatalogLine, kevLabel } from '../../adapters/report/threat_labels.js';
+
+export interface RenderMeta {
+  aiPowered: boolean;
+  providerName?: string;
+}
 
 /** Escapes text from advisories/AI so it cannot inject links, images, HTML or table cells. */
 function esc(value: unknown): string {

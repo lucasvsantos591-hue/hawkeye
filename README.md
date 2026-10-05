@@ -352,7 +352,9 @@ funcionando: `hawkeye report` deduz o status, e `--enrichment` reconsulta as fon
 **HTML:** totais por severidade (CRITICAL, HIGH, MEDIUM e LOW) e qual catálogo KEV/EPSS foi consultado; depois um
 card por finding, com severidade, versão corrigida, EPSS, KEV (sempre com o status), tags (ecossistema,
 subprojeto, direta/transitiva), onde é usado e a remediação. Todo texto é escapado e a página tem CSP restritiva.
-Markdown e DOCX trazem os mesmos status de EPSS e KEV.
+Markdown e DOCX trazem os mesmos status de EPSS e KEV. O DOCX (`hawkeye report -f docx`) tem uma página por
+finding alcançável, montada só com dados do resultado: advisory, motivo da reachability, onde o código usa o
+pacote e o comando de correção.
 
 **SARIF 2.1.0:** cada resultado aponta para o primeiro `arquivo:linha` onde o pacote é usado (ou para o
 lockfile/manifest), com `security-severity` para o GitHub Code Scanning.
@@ -490,7 +492,7 @@ Testado em 2026-09-29 e 2026-10-05 contra projetos reais:
 | fastapi/full-stack-fastapi-template (jan/2025) | Python (uv.lock) | versão anterior × atual do Hawkeye | mesmos 53 findings; a direta creditada passou a ser a mais próxima (ex.: `urllib3` via `sentry-sdk`, não via `emails` → `requests`) e as 6 LOW entram no resumo |
 | Serviço FastAPI interno (58 pacotes, 636 arquivos) | Python (uv.lock) | EPSS/KEV × FIRST e catálogo da CISA | 21/21 idênticos: 1 listada no KEV, 19 não listadas, 1 advisory sem CVE |
 
-Mais de 110 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
+Cerca de 100 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
 
 ---
 
@@ -549,14 +551,11 @@ src/
 │   ├── vulnerability_sources/osv_source.ts
 │   ├── report/                   # html, sarif, docx; threat_labels.ts = status de EPSS/KEV
 │   ├── ai_providers/             # claude, openai, gemini, custom
-│   ├── context/                  # .hawkeye.yaml, K8s, Terraform (experimental)
+│   ├── context/                  # .hawkeye.yaml (contexto de exposição)
 │   └── exposure-detection/       # comando expose
 └── types/analysis-result.ts      # schema do resultado
 tests/unit/                        # testes offline; fixtures em tests/fixtures
 ```
-
-As pastas `core/` (Dart) e `src/adapters/parsers/python_parser` são protótipos antigos e não participam da
-análise atual.
 
 Contribuições: veja [CONTRIBUTING.md](./CONTRIBUTING.md). Para reportar vulnerabilidades no próprio Hawkeye:
 [SECURITY.md](./SECURITY.md).
