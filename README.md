@@ -472,11 +472,18 @@ DNS, certificado e endpoints. A detecção **só aumenta** o risco: host acessí
 (mesmo que o `.hawkeye.yaml` diga outra coisa, com um aviso); host que não respondeu não prova isolamento, então vale
 o que estiver declarado, ou `unknown`.
 
-**IA (opcional):** `hawkeye report resultado.json --ai-provider claude` gera sugestões de remediação por
-finding. Tokens: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` ou `--ai-token`; o modelo pode ser
-trocado com `--ai-model`. O provedor recebe CVE, pacote, versões, severidade e o caminho de dependências, nunca
-código-fonte (o que sai da máquina está no [SECURITY.md](./SECURITY.md)). No relatório as sugestões aparecem
-marcadas como geradas por IA: **revise antes de executar qualquer comando**.
+**IA (opcional):** `hawkeye report resultado.json --ai-provider claude` acrescenta a cada finding os ajustes de
+código que a atualização deve exigir, o esforço estimado e observações. Tokens: `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, `GEMINI_API_KEY` ou `--ai-token`; o modelo pode ser trocado com `--ai-model`.
+
+- A IA **complementa, não substitui**: versão corrigida, comando e tipo da remediação continuam os calculados pelo
+  Hawkeye a partir do advisory e do lockfile, e campos que já têm valor não são sobrescritos.
+- Os findings vão em lotes de 20, cada um com seu próprio id (o mesmo CVE em dois pacotes recebe duas sugestões).
+  Se um lote falhar ou a resposta vier truncada, só ele fica sem sugestão, com um aviso.
+- O provedor recebe advisory, pacote, ecossistema, versões, severidade, caminho de dependências, a correção já
+  planejada e os nomes das funções do pacote que o projeto usa, nunca código-fonte (o que sai da máquina está no
+  [SECURITY.md](./SECURITY.md)).
+- No relatório o conteúdo da IA aparece marcado com o provedor (`ai_provider` no JSON): **revise antes de aplicar**.
 
 ---
 

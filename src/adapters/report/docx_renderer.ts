@@ -515,6 +515,15 @@ export async function renderDocxReport(result: AnalysisResult): Promise<Buffer> 
       sections.push(createText('Ajustes necessários:', { bold: true, size: 9 }));
       sections.push(...createBulletList(remediation.changes_needed));
     }
+    if (remediation.notes) sections.push(createText(`Observações: ${remediation.notes}`, { size: 9 }));
+    if (remediation.ai_provider) {
+      sections.push(
+        createText(`Ajustes, esforço e observações sugeridos por IA (${remediation.ai_provider}): revise antes de aplicar.`, {
+          size: 9,
+          italic: true,
+        }),
+      );
+    }
 
     if (idx < reachableVulnerabilities.length - 1) {
       sections.push(new Paragraph({ text: '', pageBreakBefore: true }));

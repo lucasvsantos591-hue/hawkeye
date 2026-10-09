@@ -9,11 +9,10 @@ class FakeAIProvider implements AIProvider {
   readonly name = 'fake';
 
   async generateRemediations(findings: VulnerabilityFinding[]): Promise<RemediationSuggestion[]> {
-    return findings.map((f) => ({
-      cve_id: f.vulnerability.cve_id,
-      type: 'MINOR' as const,
-      description: `AI suggestion for ${f.vulnerability.package}`,
-      action: `npm install ${f.vulnerability.package}@latest`,
+    return findings.map((f, i) => ({
+      id: `F${i + 1}`,
+      changes_needed: [`AI change for ${f.vulnerability.package}`],
+      effort_estimate: '30 minutes',
     }));
   }
 }
@@ -90,11 +89,14 @@ describe('report', () => {
       const html = await runReportPipeline(opts, deps);
 
       expect(html).toContain('Powered by fake');
-      expect(html).toContain('AI suggestion for express');
-      expect(html).toContain('npm install express@latest');
+      expect(html).toContain('AI suggestion (fake, verify before applying)');
+      expect(html).toContain('AI change for uuid');
+      // The engine's command stays; the model never replaces it.
+      expect(html).toContain('npm install express@4.17.1');
+      expect(html).not.toContain('@latest');
     });
 
-    it('should merge AI suggestions by cve_id correctly', async () => {
+    it('adds AI fields to each finding without replacing the engine remediation', async () => {
       const fakeProvider = new FakeAIProvider();
       const opts: ReportPipelineOptions = {
         input: sampleJsonPath,
@@ -109,8 +111,24 @@ describe('report', () => {
       const json = await runReportPipeline(opts, deps);
       const result = JSON.parse(json);
 
-      expect(result.results[0].remediation.description).toBe('AI suggestion for express');
-      expect(result.results[1].remediation.description).toBe('AI suggestion for lodash');
+      const [express, lodash, uuid] = result.results;
+      // express and lodash already have changes and effort in the result: nothing is overwritten.
+      expect(express.remediation).toMatchObject({
+        type: 'MINOR',
+        action: 'npm install express@4.17.1',
+        changes_needed: ['Update express in package.json'],
+        effort_estimate: '5 minutes',
+      });
+      expect(express.remediation.ai_provider).toBeUndefined();
+      expect(lodash.remediation.effort_estimate).toBe('2-4 hours');
+      // uuid had neither: the AI fills them and is credited, the engine fields stay.
+      expect(uuid.remediation).toMatchObject({
+        type: 'OPTIONAL',
+        action: 'Monitor repository',
+        changes_needed: ['AI change for uuid'],
+        effort_estimate: '30 minutes',
+        ai_provider: 'fake',
+      });
     });
 
     it('should handle invalid JSON input', async () => {

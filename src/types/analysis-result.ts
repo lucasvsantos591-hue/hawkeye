@@ -70,6 +70,8 @@ export interface Remediation {
   action?: string;
   effort_estimate?: string;
   notes?: string;
+  /** Set when changes_needed / effort_estimate / notes were written by this AI provider (`report --ai-provider`). */
+  ai_provider?: string;
 }
 
 export interface VulnerabilityFinding {

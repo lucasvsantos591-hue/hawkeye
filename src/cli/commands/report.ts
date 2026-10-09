@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import type { AnalysisResult } from '../../types/analysis-result.js';
 import { assertAnalysisResult } from '../../types/analysis-result.js';
 import { createAIProvider, type AIProviderName } from '../../adapters/ai_providers/provider_factory.js';
+import { enrichRemediations } from '../../adapters/ai_providers/enrich.js';
 import { renderMarkdownReport } from '../report/render-markdown.js';
 import { renderDocxReport } from '../../adapters/report/docx_renderer.js';
 import { allCveIds, applyThreatIntel, lookupThreatIntel, threatIntelInfo } from '../../core/threat_intel.js';
@@ -77,7 +78,7 @@ export async function runReportPipeline(
     }
   }
 
-  // Optionally enhance with AI
+  // Optionally add AI suggestions (code changes, effort, notes) to the engine's remediations
   const aiProvider = opts.aiProvider === 'none' ? null : opts.aiProvider || null;
 
   if (aiProvider) {
@@ -88,24 +89,13 @@ export async function runReportPipeline(
       });
 
       if (provider) {
-        const suggestions = await provider.generateRemediations(result.results);
-
-        // Merge suggestions back into results by cve_id
-        for (const suggestion of suggestions) {
-          const finding = result.results.find((r) => r.vulnerability.cve_id === suggestion.cve_id);
-          if (finding) {
-            finding.remediation = {
-              type: suggestion.type,
-              description: suggestion.description,
-              required_version: suggestion.required_version,
-              breaking_changes: suggestion.breaking_changes,
-              changes_needed: suggestion.changes_needed,
-              action: suggestion.action,
-              effort_estimate: suggestion.effort_estimate,
-              notes: suggestion.notes,
-            };
-          }
-        }
+        const summary = await enrichRemediations(result.results, provider);
+        summary.warnings.forEach(w => process.stderr.write(`⚠️  ${w}\n`));
+        process.stderr.write(
+          `🤖 AI suggestions added to ${summary.enriched} of ${result.results.length} findings` +
+            (summary.failedBatches ? ` (${summary.failedBatches} of ${summary.batches} requests failed)` : '') +
+            '\n',
+        );
       }
     } catch (error) {
       process.stderr.write(`⚠️  AI enhancement failed: ${(error as Error).message}\n`);

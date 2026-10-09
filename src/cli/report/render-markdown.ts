@@ -107,6 +107,10 @@ function renderMarkdownVulnerability(vuln: any, result: AnalysisResult): string 
     md += `**Breaking changes:** ${vuln.remediation.breaking_changes ? 'Yes ⚠️' : 'No ✓'}\n\n`;
   }
 
+  if (vuln.remediation.ai_provider) {
+    md += `_Code changes, effort and notes below are AI suggestions (${esc(vuln.remediation.ai_provider)}): verify before applying._\n\n`;
+  }
+
   if (vuln.remediation.changes_needed && vuln.remediation.changes_needed.length > 0) {
     md += `**Code changes needed:**\n\n`;
     vuln.remediation.changes_needed.forEach((change: string) => {
