@@ -27,7 +27,7 @@ export interface AnalysisEngineOptions {
   includeDev?: boolean;
   /** Restrict to some project kinds (default: all detected). */
   kinds?: ProjectKind[];
-  /** Allow running mvn / gradle to resolve Java dependencies (default true). */
+  /** Allow running mvn / gradle to resolve Java dependencies. Executes the project's build scripts (default false). */
   allowBuildTool?: boolean;
   /** Cache directory for remote data; `null` disables the cache. */
   cacheDir?: string | null;
@@ -71,7 +71,7 @@ export class AnalysisEngine {
     this.level = options.level ?? 2;
     this.includeDev = options.includeDev ?? false;
     this.kinds = options.kinds;
-    this.allowBuildTool = options.allowBuildTool ?? true;
+    this.allowBuildTool = options.allowBuildTool ?? false;
     this.cacheDir = options.cacheDir === undefined ? defaultCacheDir() : options.cacheDir;
     this.progress = options.onProgress ?? (() => {});
   }

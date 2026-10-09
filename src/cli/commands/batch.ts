@@ -36,6 +36,11 @@ export const batchCommand = {
         default: false,
         description: 'Also report vulnerabilities in dev-only dependencies',
       })
+      .option('build-tool', {
+        type: 'boolean',
+        default: false,
+        description: 'Run mvn/gradle in each project. Executes their build scripts: only for trusted repositories',
+      })
       .option('concurrency', {
         type: 'number',
         default: 2,
@@ -59,6 +64,7 @@ export const batchCommand = {
       processor.addJobsFromDirectory(options.directory, {
         level: (options.level as 1 | 2 | 3) || 2,
         includeDev: argv['include-dev'],
+        allowBuildTool: argv['build-tool'] === true,
       });
 
       const result = await processor.process();

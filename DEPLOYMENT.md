@@ -41,6 +41,7 @@ HAWKEYE_API_TOKEN=change-me HAWKEYE_ALLOWED_ROOT=/srv/repos node dist/cli/server
 curl http://localhost:3000/api/health
 curl -X POST http://localhost:3000/api/analyze \
   -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
   -d '{"projectPath": "my-repo", "level": 2, "format": "json"}'
 ```
 
@@ -187,11 +188,17 @@ lookups are repeated). A shared cache is tracked in
 
 ### Security Considerations
 
-1. **Authentication**: bearer token (`HAWKEYE_API_TOKEN`), compared in constant time
-2. **Path allow-list**: `HAWKEYE_ALLOWED_ROOT`, checked after resolving symlinks
-3. **Limits**: 5 MB request bodies, `HAWKEYE_MAX_CONCURRENCY` concurrent analyses
-4. **TLS**: not built in. Put a reverse proxy in front
-5. **Least privilege**: the container runs as `node`; mount repositories read-only
+1. **Authentication**: bearer token (`HAWKEYE_API_TOKEN`), compared in constant time. Without a token
+   (loopback only), requests whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` get 421 (DNS rebinding)
+2. **Request type**: `POST` bodies must be `Content-Type: application/json` (415 otherwise), so a cross-site
+   form or simple `fetch` cannot start an analysis
+3. **Path allow-list**: `HAWKEYE_ALLOWED_ROOT`, checked after resolving symlinks
+4. **Limits**: 5 MB request bodies, `HAWKEYE_MAX_CONCURRENCY` concurrent analyses
+5. **TLS**: not built in. Put a reverse proxy in front
+6. **Least privilege**: the container runs as `node`; mount repositories read-only
+7. **Untrusted repositories**: nothing from the analyzed project runs unless `HAWKEYE_ALLOW_BUILD_TOOLS=1`
+   (mvn/gradle). python3 runs isolated (`-I`, outside the project directory); child processes get a minimal
+   environment, without `HAWKEYE_API_TOKEN` or AI keys
 
 ### Troubleshooting
 

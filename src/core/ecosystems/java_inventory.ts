@@ -7,9 +7,10 @@ import { CacheManager } from '../cache_manager.js';
 import { flattenGraph, type DependencyInventory, type GraphNode, type InstalledPackage, type Root } from '../inventory_types.js';
 import { MavenResolver, type MavenDep } from './maven_resolver.js';
 import { ProjectFs } from '../project_fs.js';
+import { childEnv } from '../child_env.js';
 
 export interface JavaInventoryOptions {
-  /** Allow running mvn/gradle (executes the project's build logic). */
+  /** Allow running mvn/gradle (executes the project's build logic, so only for trusted repositories). */
   allowBuildTool: boolean;
   includeDev: boolean;
   cache: CacheManager;
@@ -30,7 +31,7 @@ function run(cmd: string, args: string[], cwd: string): Promise<{ ok: boolean; s
     execFile(
       cmd,
       args,
-      { cwd, timeout: BUILD_TIMEOUT, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, TERM: 'dumb' } },
+      { cwd, timeout: BUILD_TIMEOUT, maxBuffer: 256 * 1024 * 1024, env: { ...childEnv('build'), TERM: 'dumb' } },
       (error, stdout, stderr) => resolve({ ok: !error, stdout: String(stdout), stderr: String(stderr || error?.message || '') }),
     );
   });
@@ -77,7 +78,7 @@ export async function readMavenInventory(dir: string, opts: JavaInventoryOptions
 
   if (opts.allowBuildTool && mvn) {
     opts.onProgress?.(
-      `☕ Running ${path.basename(mvn)} dependency:tree (executes this project's Maven build; use --no-build-tool for untrusted repos)...`,
+      `☕ Running ${path.basename(mvn)} dependency:tree (executes this project's Maven build; only for trusted repos)...`,
     );
     const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hawkeye-mvn-')), 'tree.txt');
     const res = await run(
@@ -100,7 +101,7 @@ export async function readMavenInventory(dir: string, opts: JavaInventoryOptions
   } else if (!mvn) {
     warnings.push('Maven not found: resolving dependencies from pom.xml and Maven Central (approximate). Install Maven for exact results.');
   } else {
-    warnings.push('Build tools disabled: resolving dependencies from pom.xml and Maven Central (approximate).');
+    warnings.push('Build tools disabled: resolving dependencies from pom.xml and Maven Central (approximate). On a trusted repository, --build-tool (API: HAWKEYE_ALLOW_BUILD_TOOLS=1) gives the exact tree.');
   }
 
   opts.onProgress?.('☕ Resolving Maven dependencies from pom.xml + Maven Central...');
@@ -208,7 +209,7 @@ export async function readGradleInventory(dir: string, opts: JavaInventoryOption
   const gradle = fs.existsSync(gradlew) ? gradlew : onPath('gradle') ? 'gradle' : null;
   if (opts.allowBuildTool && gradle) {
     opts.onProgress?.(
-      `🐘 Running ${path.basename(gradle)} dependencies (executes this project's Gradle build; use --no-build-tool for untrusted repos)...`,
+      `🐘 Running ${path.basename(gradle)} dependencies (executes this project's Gradle build; only for trusted repos)...`,
     );
     const projects = [':', ...gradleSubprojects(dir, pfs).map(p => `:${p}:`)];
     const configs = opts.includeDev ? ['runtimeClasspath', 'testRuntimeClasspath'] : ['runtimeClasspath'];
@@ -231,7 +232,7 @@ export async function readGradleInventory(dir: string, opts: JavaInventoryOption
   } else if (!gradle) {
     warnings.push('Gradle wrapper not found: resolving declared dependencies via Maven Central (approximate).');
   } else {
-    warnings.push('Build tools disabled: resolving declared Gradle dependencies via Maven Central (approximate).');
+    warnings.push('Build tools disabled: resolving declared Gradle dependencies via Maven Central (approximate). On a trusted repository, --build-tool (API: HAWKEYE_ALLOW_BUILD_TOOLS=1) gives the exact tree.');
   }
 
   opts.onProgress?.('🐘 Resolving Gradle dependencies from build files + Maven Central...');
