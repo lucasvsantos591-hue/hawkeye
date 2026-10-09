@@ -1,9 +1,11 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import type { PackageUsage } from './import_index.js';
 import { normalizePyName } from './versions.js';
 import { ProjectFs } from './project_fs.js';
+import { childEnv } from './child_env.js';
 
 const IGNORED_DIRS = new Set([
   '.git', '.venv', 'venv', 'env', '.env', '.tox', '.nox', '__pycache__', 'site-packages', 'node_modules',
@@ -41,8 +43,12 @@ const RUNTIME_LOADED = new Set([
   'httptools', 'websockets',
 ]);
 
+// Runs with -I, and drops '' / cwd from sys.path before any other import, so a module in the analyzed
+// repository (an ast.py or json.py at its root) can never shadow the standard library and run.
 const PY_SCRIPT = String.raw`
-import ast, json, re, sys
+import sys
+sys.path[:] = [p for p in sys.path if p not in ('', '.')]
+import ast, json, re
 IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$')
 FALLBACK = re.compile(r'^\s*(?:from\s+([A-Za-z_][\w.]*)\s+import|import\s+([A-Za-z_][\w.]*(?:\s*,\s*[A-Za-z_][\w.]*)*))', re.M)
 def is_tc(test):
@@ -143,7 +149,8 @@ export interface PythonIndex {
 
 export function buildPythonIndex(projectPath: string): PythonIndex {
   const warnings: string[] = [];
-  const files = listPythonFiles(projectPath);
+  // Absolute paths: python3 runs from another working directory.
+  const files = listPythonFiles(path.resolve(projectPath));
   const results = analyzeFiles(files, warnings);
 
   const modules = new Map<string, ModuleUsage>();
@@ -262,11 +269,13 @@ function listPythonFiles(root: string): string[] {
 function analyzeFiles(files: string[], warnings: string[]): Record<string, FileResult> {
   if (!files.length) return {};
   for (const python of ['python3', 'python']) {
-    const res = spawnSync(python, ['-c', PY_SCRIPT], {
+    const res = spawnSync(python, ['-I', '-c', PY_SCRIPT], {
       input: JSON.stringify(files),
       maxBuffer: 1024 * 1024 * 1024,
       encoding: 'utf-8',
       timeout: 10 * 60 * 1000,
+      cwd: os.tmpdir(),
+      env: childEnv('python'),
     });
     if (res.status === 0 && res.stdout) {
       try {

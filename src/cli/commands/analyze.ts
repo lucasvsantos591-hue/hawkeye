@@ -41,8 +41,9 @@ export const analyzeCommand = {
       })
       .option('build-tool', {
         type: 'boolean',
-        default: true,
-        description: 'Run mvn/gradle to resolve Java dependencies exactly (--no-build-tool: read build files only)',
+        default: false,
+        description:
+          'Run mvn/gradle (or ./mvnw, ./gradlew) to resolve Java dependencies exactly. Executes the project build scripts: only for trusted repositories',
       })
       .option('include-dev', {
         type: 'boolean',
@@ -81,7 +82,7 @@ export const analyzeCommand = {
         level: argv.level,
         includeDev: argv['include-dev'],
         kinds: parseKinds(argv.only),
-        allowBuildTool: argv['build-tool'] !== false,
+        allowBuildTool: argv['build-tool'] === true,
         cacheDir: argv.cache === false ? null : argv.cache,
         onProgress: log,
       });

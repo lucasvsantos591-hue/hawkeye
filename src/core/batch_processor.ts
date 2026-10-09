@@ -9,6 +9,8 @@ export interface BatchJob {
   projectPath: string;
   level?: 1 | 2 | 3;
   includeDev?: boolean;
+  /** Run mvn/gradle (executes the project's build scripts). Default false. */
+  allowBuildTool?: boolean;
   outputFile?: string;
 }
 
@@ -112,6 +114,7 @@ export class BatchProcessor {
         projectPath: job.projectPath,
         level: job.level || 2,
         includeDev: job.includeDev,
+        allowBuildTool: job.allowBuildTool === true,
       });
 
       const result = await engine.analyze();

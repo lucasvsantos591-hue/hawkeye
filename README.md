@@ -86,10 +86,10 @@ Requisitos:
 
 - **Node.js 20+** (obrigatório)
 - **Acesso HTTPS** a `api.osv.dev` (obrigatório), `api.first.org` e `www.cisa.gov` (opcionais: sem eles o
-  resultado sai sem EPSS/KEV e com um aviso). Para Java sem Maven/Gradle instalado, também `repo1.maven.org`.
+  resultado sai sem EPSS/KEV e com um aviso). Para Java sem `--build-tool`, também `repo1.maven.org`.
 - **python3** (recomendado para projetos Python; sem ele, os imports são detectados por regex, só nível 1)
-- **Maven ou Gradle** (opcional, para projetos Java): com eles a árvore de dependências é exata; sem eles
-  usa o resolvedor próprio, que bateu 100% com o Maven nos testes (veja [Validação](#-validação))
+- **Maven ou Gradle** (opcional, para projetos Java): com `--build-tool` a árvore de dependências é exata; sem
+  ele usa o resolvedor próprio, que bateu 100% com o Maven nos testes (veja [Validação](#-validação))
 
 ```bash
 git clone https://github.com/lucasvsantos591-hue/hawkeye.git
@@ -146,15 +146,17 @@ Analisa um repositório ou projeto.
 | `--level` | `2` | `1` = pacote importado; `2` = bindings importados são usados; `3` = ainda não implementado (roda o 2 com aviso) |
 | `--only` | todos | `npm,python,maven,gradle` ou `java` |
 | `--include-dev` | `false` | Inclui devDependencies / grupos dev / escopo `test` |
-| `--no-build-tool` | – | Não executa `mvn`/`gradle` (lê só os arquivos de build) |
+| `--build-tool` | `false` | Executa `mvn`/`gradle` (ou `./mvnw`, `./gradlew`) para a árvore Java exata; sem ela, lê só os arquivos de build |
 | `--fail-on` | – | `low`, `medium`, `high`, `critical`: exit code 2 se existir finding alcançável nessa severidade ou acima |
 | `--exposure <arquivo>` | – | Saída do `hawkeye expose -o`; veja [Contexto de exposição](#-contexto-de-exposição-e-remediação-com-ia) |
 | `--cache <dir>` / `--no-cache` | `~/.cache/hawkeye` | Cache das respostas do OSV/EPSS/KEV/Maven Central |
 
 Exit codes: `0` ok, `1` erro, `2` limite do `--fail-on` atingido.
 
-> ⚠️ Rodar `mvn`/`gradle` executa os scripts de build do projeto analisado. Em repositórios de terceiros ou não
-> confiáveis, use `--no-build-tool`.
+> ⚠️ Rodar `mvn`/`gradle` executa os scripts de build do projeto analisado, por isso é opt-in: use `--build-tool`
+> só em repositórios confiáveis. Sem essa opção, analisar um repositório não executa nada dele. O `python3` roda
+> isolado (`-I`, fora do diretório do projeto), e `mvn`/`gradle`/`python3` recebem só o ambiente mínimo (`PATH`,
+> `HOME`, `JAVA_HOME`, proxy...), nunca tokens nem chaves de API.
 
 ### `hawkeye scan <package> <version>`
 
@@ -178,7 +180,7 @@ Gera relatórios a partir de um JSON do `analyze`.
 ### `hawkeye batch <diretório>`
 
 Analisa cada subdiretório que contenha um projeto suportado. `--concurrency` (padrão 2), `--level`,
-`--include-dev`, `-o <dir>` grava um JSON por projeto. O resumo vai para stderr e o JSON consolidado para stdout.
+`--include-dev`, `--build-tool` (padrão `false`), `-o <dir>` grava um JSON por projeto. O resumo vai para stderr e o JSON consolidado para stdout.
 
 ### `hawkeye expose <hostname>`
 
@@ -414,6 +416,7 @@ docker run -p 3000:3000 \
 curl localhost:3000/api/health
 curl -X POST localhost:3000/api/analyze \
   -H "Authorization: Bearer troque-isto" \
+  -H "Content-Type: application/json" \
   -d '{"projectPath": "meu-repo", "format": "json", "includeDev": false}'
 ```
 
@@ -426,6 +429,10 @@ curl -X POST localhost:3000/api/analyze \
 Segurança:
 
 - Exige `HAWKEYE_API_TOKEN` (Bearer) para escutar fora de localhost; sem token o servidor se recusa a subir.
+- Sem token, só aceita requisições com `Host` igual a `localhost`, `127.0.0.1` ou `[::1]` (421 nos demais), o
+  que bloqueia DNS rebinding a partir de uma página aberta no navegador.
+- `POST` exige `Content-Type: application/json` (415 nos demais), para que um formulário ou `fetch` simples de
+  outro site não dispare análises.
 - `projectPath` é resolvido dentro de `HAWKEYE_ALLOWED_ROOT`, com symlinks resolvidos; qualquer caminho fora dele recebe 403.
 - Corpo limitado a 5 MB; no máximo `HAWKEYE_MAX_CONCURRENCY` análises simultâneas (429 acima disso); CORS só se `HAWKEYE_CORS_ORIGIN` for definido.
 - A API **não executa mvn/gradle** (isso rodaria scripts do projeto) a menos que `HAWKEYE_ALLOW_BUILD_TOOLS=1`.
@@ -511,7 +518,7 @@ Testado em 2026-09-29 e 2026-10-05 contra projetos reais:
 | fastapi/full-stack-fastapi-template (jan/2025) | Python (uv.lock) | versão anterior × atual do Hawkeye | mesmos 53 findings; a direta creditada passou a ser a mais próxima (ex.: `urllib3` via `sentry-sdk`, não via `emails` → `requests`) e as 6 LOW entram no resumo |
 | Serviço FastAPI interno (58 pacotes, 636 arquivos) | Python (uv.lock) | EPSS/KEV × FIRST e catálogo da CISA | 21/21 idênticos: 1 listada no KEV, 19 não listadas, 1 advisory sem CVE |
 
-Cerca de 90 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
+Cerca de 100 testes unitários rodam offline (lockfiles reais como fixtures, APIs simuladas).
 
 ---
 
@@ -565,6 +572,7 @@ src/
 │   ├── java_index.ts             # uso em Java/Kotlin (imports + conteúdo do jar)
 │   ├── threat_intel.ts           # EPSS + CISA KEV
 │   ├── versions.ts               # comparação de versões semver/PEP 440/Maven
+│   ├── project_fs.ts, child_env.ts # leitura confinada ao repositório; ambiente mínimo de python3/mvn/gradle
 │   ├── inventory_types.ts, cache_manager.ts, http.ts, batch_processor.ts, risk_rescorer.ts
 ├── adapters/
 │   ├── vulnerability_sources/osv_source.ts

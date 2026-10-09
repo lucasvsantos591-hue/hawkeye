@@ -42,7 +42,17 @@ We will:
      handshake, HTTP requests). No third-party service is queried.
    - Point the `HAWKEYE_*_URL` variables at internal mirrors if package names are sensitive.
 
-3. **AI Provider Choice** (optional, `hawkeye report --ai-provider`):
+3. **Analyzing untrusted repositories**:
+   - By default Hawkeye runs nothing from the analyzed project. Source files are parsed, never executed;
+     python3 runs isolated (`-I`, outside the project directory), so a module in the repository cannot
+     shadow the standard library.
+   - `--build-tool` (API: `HAWKEYE_ALLOW_BUILD_TOOLS=1`) runs `mvn`/`gradle` or the project's `./mvnw` /
+     `./gradlew`, which executes its build scripts. Use it only on repositories you trust.
+   - Child processes (python3, mvn, gradle) get a minimal environment (`PATH`, `HOME`, `JAVA_HOME`, proxy
+     settings), never `HAWKEYE_API_TOKEN` or AI provider keys. A build script can still read files in
+     your home directory (e.g. `~/.m2/settings.xml`), which is why build tools stay opt-in.
+
+4. **AI Provider Choice** (optional, `hawkeye report --ai-provider`):
    - The provider receives, per finding: CVE id, package, versions, severity, reachability and the
      dependency path. No source code.
    - Choose providers you trust and review their API terms
