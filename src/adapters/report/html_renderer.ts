@@ -1,4 +1,4 @@
-import { AnalysisResult, VulnerabilityFinding } from '../../types/analysis-result.js';
+import { AnalysisResult, Remediation, VulnerabilityFinding } from '../../types/analysis-result.js';
 import type { HawkeyeContext } from '../context/context_loader.js';
 import { RiskRescorer, RescoreResult, findingKey } from '../../core/risk_rescorer.js';
 import { escapeHtml as e, safeUrl, shownPath } from './escape.js';
@@ -382,14 +382,29 @@ export class HTMLReportRenderer {
       ${sites}
 
       ${finding.remediation ? `<div style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-left: 3px solid #0066cc; border-radius: 3px;">
-        <strong>Remediation${this.aiProvider ? ' (AI-generated, verify before running)' : ''}:</strong> ${e(finding.remediation.description)}
+        <strong>Remediation:</strong> ${e(finding.remediation.description)}
         ${finding.remediation.action ? `<br/><code>${e(finding.remediation.action)}</code>` : ''}
+        ${this.renderRemediationExtras(finding.remediation)}
       </div>` : ''}
 
       <div class="tags">
         ${tags.join('')}
       </div>
     </div>`;
+  }
+
+  /** Code changes, effort and notes; labeled when an AI provider wrote them. */
+  private renderRemediationExtras(rem: Remediation): string {
+    const changes = rem.changes_needed?.length
+      ? `<ul style="margin: 4px 0 0 18px;">${rem.changes_needed.map(c => `<li>${e(c)}</li>`).join('')}</ul>`
+      : '';
+    const effort = rem.effort_estimate ? `<div><strong>Effort:</strong> ${e(rem.effort_estimate)}</div>` : '';
+    const notes = rem.notes ? `<div>${e(rem.notes)}</div>` : '';
+    if (!changes && !effort && !notes) return '';
+    const label = rem.ai_provider
+      ? `AI suggestion (${e(rem.ai_provider)}, verify before applying)`
+      : 'Changes needed';
+    return `<div style="margin-top: 8px; font-size: 0.9em;"><strong>${label}:</strong>${changes}${effort}${notes}</div>`;
   }
 
   private renderFooter(): string {

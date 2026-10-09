@@ -53,8 +53,11 @@ We will:
      your home directory (e.g. `~/.m2/settings.xml`), which is why build tools stay opt-in.
 
 4. **AI Provider Choice** (optional, `hawkeye report --ai-provider`):
-   - The provider receives, per finding: CVE id, package, versions, severity, reachability and the
-     dependency path. No source code.
+   - The provider receives, per finding: advisory id and summary, package, ecosystem, versions, severity,
+     reachability, the dependency path, the remediation Hawkeye already planned, and the names of the
+     package's functions/classes the project uses (e.g. `get`, `Session`). No source code.
+   - The answer can only add code changes, an effort estimate and notes, marked with `ai_provider`. The
+     fixed version, the command and the remediation type always come from the advisory, never from the model.
    - Choose providers you trust and review their API terms
    - For maximum privacy use `--ai-provider custom --ai-base-url` with a self-hosted OpenAI-compatible
      server (e.g. Ollama)
