@@ -300,7 +300,7 @@ describe('AnalysisEngine', () => {
 });
 
 /**
- * Same shape as the cia-backend scan: an internal logging library that depends on fastapi, fastapi and httpx
+ * Shape of a real FastAPI service scan: an internal logging library that depends on fastapi, fastapi and httpx
  * as direct dependencies too, and respx (an httpx mock) only in the dev group.
  */
 function makeFastApiProject(): string {
@@ -310,15 +310,15 @@ function makeFastApiProject(): string {
     (deps.length ? `dependencies = [${deps.map(d => `{ name = "${d}" }`).join(', ')}]\n` : '');
   fs.writeFileSync(
     path.join(dir, 'pyproject.toml'),
-    '[project]\nname = "svc"\ndependencies = ["cia-logger-lib", "fastapi", "httpx"]\n[dependency-groups]\ndev = ["respx"]\n',
+    '[project]\nname = "svc"\ndependencies = ["acme-logger-lib", "fastapi", "httpx"]\n[dependency-groups]\ndev = ["respx"]\n',
   );
   fs.writeFileSync(
     path.join(dir, 'uv.lock'),
     [
       'version = 1\n[[package]]\nname = "svc"\nversion = "0.1.0"\nsource = { editable = "." }\n' +
-        'dependencies = [{ name = "cia-logger-lib" }, { name = "fastapi" }, { name = "httpx" }]\n' +
+        'dependencies = [{ name = "acme-logger-lib" }, { name = "fastapi" }, { name = "httpx" }]\n' +
         '[package.dev-dependencies]\ndev = [{ name = "respx" }]\n',
-      pkg('cia-logger-lib', '2.0.0', ['fastapi']),
+      pkg('acme-logger-lib', '2.0.0', ['fastapi']),
       pkg('fastapi', '0.115.0', ['starlette']),
       pkg('starlette', '0.48.0', ['anyio']),
       pkg('httpx', '0.28.0', ['anyio']),
@@ -329,14 +329,14 @@ function makeFastApiProject(): string {
   fs.mkdirSync(path.join(dir, 'app'));
   // The logging library is used in more files than fastapi: file count must not decide the parent.
   for (const name of ['a', 'b', 'c']) {
-    fs.writeFileSync(path.join(dir, `app/${name}.py`), 'from cia_logger_lib import configure_logging\nconfigure_logging()\n');
+    fs.writeFileSync(path.join(dir, `app/${name}.py`), 'from acme_logger_lib import configure_logging\nconfigure_logging()\n');
   }
   fs.writeFileSync(path.join(dir, 'app/main.py'), 'from fastapi import FastAPI\napp = FastAPI()\n');
   fs.writeFileSync(path.join(dir, 'app/client.py'), 'import httpx\nhttpx.get("https://x")\n');
   return dir;
 }
 
-describe('transitive parents (cia-backend shape)', () => {
+describe('transitive parents (FastAPI service shape)', () => {
   beforeEach(() => vi.stubGlobal('fetch', vi.fn(fakeFetch)));
   afterEach(() => vi.unstubAllGlobals());
 
@@ -344,16 +344,16 @@ describe('transitive parents (cia-backend shape)', () => {
     const result = await new AnalysisEngine({ projectPath: makeFastApiProject(), cacheDir: null }).analyze();
     const byPkg = Object.fromEntries(result.results.map(f => [f.vulnerability.package, f]));
 
-    expect(byPkg.starlette.vulnerability.introduced_via).toEqual(['cia-logger-lib', 'fastapi']);
+    expect(byPkg.starlette.vulnerability.introduced_via).toEqual(['acme-logger-lib', 'fastapi']);
     expect(byPkg.starlette.call_chain?.path).toEqual(['fastapi', 'starlette']);
     expect(byPkg.starlette.reason).toMatch(/^Transitive dependency of fastapi, which is reachable/);
-    expect(byPkg.starlette.reason).toContain('Also pulled in by cia-logger-lib, which is reachable too.');
+    expect(byPkg.starlette.reason).toContain('Also pulled in by acme-logger-lib, which is reachable too.');
 
     // respx is a dev-only mock library: never shown as the source of a production package.
-    expect(byPkg.anyio.vulnerability.introduced_via).toEqual(['cia-logger-lib', 'fastapi', 'httpx']);
+    expect(byPkg.anyio.vulnerability.introduced_via).toEqual(['acme-logger-lib', 'fastapi', 'httpx']);
     expect(byPkg.anyio.vulnerability.is_dev).toBe(false);
     expect(byPkg.anyio.call_chain?.path).toEqual(['httpx', 'anyio']);
-    expect(byPkg.anyio.reason).toContain('Also pulled in by fastapi, cia-logger-lib, which are reachable too.');
+    expect(byPkg.anyio.reason).toContain('Also pulled in by fastapi, acme-logger-lib, which are reachable too.');
     expect(byPkg.anyio.remediation.description).not.toContain('respx');
   });
 
